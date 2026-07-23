@@ -131,6 +131,16 @@
     timer_setup(timer, fn, 0)
 #endif
 
+/* Linux 6.15 removed del_timer_sync (renamed timer_delete_sync in 6.2,
+ * wrapper kept till 6.14). Linux 6.16 renamed from_timer to timer_container_of
+ * (no compat wrapper). Provide aliases for older opennsl source. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+#define del_timer_sync(t) timer_delete_sync(t)
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
+#define from_timer(var, cb, field) timer_container_of(var, cb, field)
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,6,0)
 static inline void page_ref_inc(struct page *page)
 {
