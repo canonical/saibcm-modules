@@ -1,0 +1,150 @@
+--- a/make/Makefile.linux-x86-smp_generic_64-2_6	2026-05-29 09:54:45.161988977 +0800
++++ b/make/Makefile.linux-x86-smp_generic_64-2_6	2026-05-29 10:12:07.982885281 +0800
+@@ -30,13 +30,14 @@
+ CFGFLAGS += -DPTRS_ARE_64BITS
+ CFGFLAGS += -DPHYS_ADDRS_ARE_64BITS
+ CFGFLAGS += -DSAL_SPL_LOCK_ON_IRQ
++CFGFLAGS += -Wno-incompatible-pointer-types -Wno-unused-const-variable -Wno-unused-function -Wno-unused-variable -Wno-missing-prototypes -Wno-missing-declarations -Wno-frame-address -Wno-format-truncation
+ 
+ include ${SDK}/make/Makefile.linux-x86-generic-common-2_6
+ 
+ ifeq (,$(KFLAGS))
+-KFLAGS := -nostdinc -isystem $(SYSINC) -I$(KERNDIR)/include -I$(KERNDIR)/arch/x86/include -include $(AUTOCONF) -D__KERNEL__ -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -fno-delete-null-pointer-checks -Os -m64 -mtune=generic -mno-red-zone -fno-pie -mcmodel=kernel -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -fno-stack-protector -fomit-frame-pointer -g -Wdeclaration-after-statement -Wno-pointer-sign
++KFLAGS := -std=gnu11 -fgnu89-inline -fms-extensions -nostdinc -isystem $(SYSINC) -I$(KERNDIR)/include -I$(KERNDIR)/arch/x86/include -include $(AUTOCONF) -D__KERNEL__ -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Wno-format-security -fno-delete-null-pointer-checks -Os -m64 -mtune=generic -mno-red-zone -fno-pie -mcmodel=kernel -DCONFIG_AS_CFI=1 -DCONFIG_AS_CFI_SIGNAL_FRAME=1 -pipe -Wno-sign-compare -fno-asynchronous-unwind-tables -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -fno-stack-protector -g -Wno-declaration-after-statement -Wno-pointer-sign
+ ifneq (1,$(USE_CLANG))
+-KFLAGS += -funit-at-a-time -maccumulate-outgoing-args
++KFLAGS += -maccumulate-outgoing-args
+ endif
+ endif
+ 
+--- a/make/Makefile.linux-kernel-2_6	2026-05-29 09:54:45.161971756 +0800
++++ b/make/Makefile.linux-kernel-2_6	2026-05-29 10:12:07.985104720 +0800
+@@ -134,7 +134,7 @@
+ STD_CXXFLAGS = ${STD_CFLAGS}
+ 
+ ifndef BCM_CFLAGS
+-BCM_CFLAGS   = -Wall -Werror
++BCM_CFLAGS   = -Wall -Werror -Wno-error=incompatible-pointer-types
+ endif
+ 
+ BCM_CPPFLAGS = ${BCM_CFLAGS}
+--- a/make/Makefile.linux-kernel	2026-05-29 09:54:45.161971756 +0800
++++ b/make/Makefile.linux-kernel	2026-05-29 10:12:07.986777528 +0800
+@@ -90,7 +90,7 @@
+ STD_CPPFLAGS = ${STD_CFLAGS}
+ STD_CXXFLAGS = ${STD_CFLAGS}
+ 
+-BCM_CFLAGS   = -Wall -Werror
++BCM_CFLAGS   = -Wall -Werror -Wno-error=incompatible-pointer-types
+ BCM_CPPFLAGS = ${BCM_CFLAGS}
+ BCM_CXXFLAGS = ${BCM_CFLAGS}
+ 
+--- a/make/Makefile.linux-x86-common-2_6	2026-05-29 09:54:45.161988977 +0800
++++ b/make/Makefile.linux-x86-common-2_6	2026-05-29 10:12:07.988084400 +0800
+@@ -48,6 +48,6 @@
+ 
+ ifneq ($(targetplat),user)
+ # By default we exclude -Werror from x86 kernel builds
+-BCM_CFLAGS   = -Wall
++BCM_CFLAGS   = -Wall -Wno-error=incompatible-pointer-types
+ include ${SDK}/make/Makefile.linux-kernel-2_6
+ endif
+--- a/make/Makefile.linux-kmodule	2026-05-29 09:54:45.161971756 +0800
++++ b/make/Makefile.linux-kmodule	2026-05-29 10:12:08.009909426 +0800
+@@ -120,8 +120,11 @@
+ 
+ ifeq (1,$(NO_PRECOMPILED_MODULE))
+ # {
+-$(KMODULE):
+-	rm -f *.o *.ko .*.cmd *.sig *.P
++$(PRE_COMPILED_OBJ): FORCE
++	cp -f $(LIBDIR)/$(MODULE) $@
++
++$(KMODULE): $(PRE_COMPILED_OBJ)
++	rm -f *.ko .*.cmd *.sig *.P
+ 	rm -fr .tmp_versions
+ 	if [ ! -f $(KERNBLDDIR)/NO_SUPRESS ]; then echo "# suppress warning" > .$(PRE_COMPILED_OBJ).cmd; fi
+ 	#
+@@ -140,14 +143,19 @@
+ # Kernels before 2.6.17 do not support external module symbols files,
+ # so we create a dummy to prevent build failures.
+ #
+-$(KMODULE):
+-	rm -f *.o *.ko .*.cmd
++$(PRE_COMPILED_OBJ): FORCE
++	cp -f $(LIBDIR)/$(MODULE) $@
++
++$(KMODULE): $(PRE_COMPILED_OBJ)
++	rm -f *.ko .*.cmd
+ 	rm -fr .tmp_versions
+-	ln -s $(LIBDIR)/$(MODULE) $(PRE_COMPILED_OBJ)_shipped
++	cp -f $(LIBDIR)/$(MODULE) $(PRE_COMPILED_OBJ)_shipped
+ 	if [ ! -f $(KERNBLDDIR)/NO_SUPRESS ]; then echo "# suppress warning" > .$(PRE_COMPILED_OBJ).cmd; fi
+-	$(MAKE) -C $(KERNBLDDIR) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) modules
++	$(MAKE) -C $(KERNBLDDIR) CROSS_COMPILE=$(CROSS_COMPILE) KBUILD_MODPOST_WARN=1 M=$(PWD) modules
+ 	if [ ! -f Module.symvers ]; then echo "old kernel (pre-2.6.17)" > Module.symvers; fi
+ 	cp -f $(KMODULE) $(LIBDIR)
+ 	rm -f $(PRE_COMPILED_OBJ)_shipped
+ # }
+ endif
++
++FORCE:
+--- a/systems/bde/linux/kernel/Makefile	2026-05-29 09:54:45.187188069 +0800
++++ b/systems/bde/linux/kernel/Makefile	2026-05-29 10:12:07.989482720 +0800
+@@ -120,7 +120,7 @@
+ #
+ $(MODULE): $(BLDDIR)/.tree $(BOBJS) kernel_libs
+ 	mkdir -p $(@D)
+-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
++	$(LD) $(MODULE_LDFLAGS) -r -d -z muldefs $(BOBJS) $(LIBS) -o $@
+ $(KMODULE): $(MODULE)
+ 	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
+ 	mkdir $(BLDDIR)/$(KERNEL_MODULE_DIR)
+--- a/systems/bde/linux/user/kernel/Makefile	2026-05-29 09:54:45.188099636 +0800
++++ b/systems/bde/linux/user/kernel/Makefile	2026-05-29 10:12:08.025277945 +0800
+@@ -93,6 +93,7 @@
+ else
+ # {
+ KBUILD_EXTRA_SYMBOLS := ${BLDDIR}/../../kernel/kernel_module/Module.symvers
++KBUILD_EXTRA_SYMBOLS_ALT := ${BLDDIR}/../../kernel/Module.symvers
+ export KBUILD_EXTRA_SYMBOLS
+ 
+ module: $(MODULE)
+@@ -102,13 +103,13 @@
+ # here for compatibility.
+ #
+ $(MODULE): $(BLDDIR)/.tree $(BOBJS) kernel_libs
+-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
++	$(LD) $(MODULE_LDFLAGS) -r -d -z muldefs $(BOBJS) $(LIBS) -o $@
+ 
+ $(KMODULE): $(MODULE)
+ 	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
+ 	mkdir $(BLDDIR)/$(KERNEL_MODULE_DIR)
+ 	cp ${SDK}/make/Makefile.linux-kmodule $(BLDDIR)/$(KERNEL_MODULE_DIR)/Makefile
+-	cat ${KBUILD_EXTRA_SYMBOLS} > $(BLDDIR)/$(KERNEL_MODULE_DIR)/Module.symvers
++	@if [ -f $(KBUILD_EXTRA_SYMBOLS_ALT) ]; then cat $(KBUILD_EXTRA_SYMBOLS_ALT) > $(BLDDIR)/$(KERNEL_MODULE_DIR)/Module.symvers; else cat $(KBUILD_EXTRA_SYMBOLS) > $(BLDDIR)/$(KERNEL_MODULE_DIR)/Module.symvers; fi
+ 	MOD_NAME=$(THIS_MOD_NAME) KBUILD_EXTRA_SYMBOLS="${KBUILD_EXTRA_SYMBOLS}"  $(MAKE) -C $(BLDDIR)/$(KERNEL_MODULE_DIR) $(THIS_MOD_NAME).ko	
+ 
+ include $(SDK)/make/Make.depend
+--- a/systems/linux/kernel/modules/bcm-knet/Makefile	2026-05-29 09:54:45.188890681 +0800
++++ b/systems/linux/kernel/modules/bcm-knet/Makefile	2026-05-29 10:12:07.992466913 +0800
+@@ -88,7 +88,7 @@
+ # here for compatibility.
+ #
+ $(MODULE): $(BLDDIR)/.tree $(BOBJS) $(LIBS)
+-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
++	$(LD) $(MODULE_LDFLAGS) -r -d -z muldefs $(BOBJS) $(LIBS) -o $@
+ 
+ $(KMODULE): $(MODULE)
+ 	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)
+--- a/systems/linux/kernel/modules/knet-cb/Makefile	2026-05-29 09:54:45.193550074 +0800
++++ b/systems/linux/kernel/modules/knet-cb/Makefile	2026-05-29 10:12:07.994260533 +0800
+@@ -102,7 +102,7 @@
+ 		CROSS_COMPILE=$(CROSS_COMPILE)
+ 
+ $(MODULE): $(BLDDIR)/.tree $(BOBJS) $(LIBS)
+-	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
++	$(LD) $(MODULE_LDFLAGS) -r -d -z muldefs $(BOBJS) $(LIBS) -o $@
+ 
+ $(KMODULE): $(MODULE)
+ 	rm -fr $(BLDDIR)/$(KERNEL_MODULE_DIR)

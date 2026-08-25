@@ -1,0 +1,8 @@
+systems/linux/user/x86-smp_generic_64-2_6/linux-bcm-knet.ko lib/modules/7.0.0-1002-sonic/extra
+systems/linux/user/x86-smp_generic_64-2_6/linux-kernel-bde.ko lib/modules/7.0.0-1002-sonic/extra
+systems/linux/user/x86-smp_generic_64-2_6/linux-user-bde.ko lib/modules/7.0.0-1002-sonic/extra
+systems/linux/user/x86-smp_generic_64-2_6/linux-knet-cb.ko lib/modules/7.0.0-1002-sonic/extra
+systemd/opennsl-modules.service lib/systemd/system
+sdklt/build/bde/linux_ngbde.ko lib/modules/7.0.0-1002-sonic/extra
+sdklt/build/knet/linux_ngknet.ko lib/modules/7.0.0-1002-sonic/extra
+sdklt/build/knetcb/linux_ngknetcb.ko lib/modules/7.0.0-1002-sonic/extra

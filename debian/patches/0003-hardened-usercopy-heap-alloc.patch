@@ -1,0 +1,2177 @@
+--- a/sdklt/linux/bde/ngbde_ioctl.c	2026-05-31 08:40:13.743446859 +0800
++++ b/sdklt/linux/bde/ngbde_ioctl.c	2026-05-31 08:40:58.089482649 +0800
+@@ -27,7 +27,7 @@
+ long
+ ngbde_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ {
+-    struct ngbde_ioc_cmd_s ioc;
++    struct ngbde_ioc_cmd_s *ioc = NULL;
+     struct ngbde_dev_s *swdev;
+     struct ngbde_irq_reg_s ireg;
+     struct ngbde_intr_ack_reg_s ackreg;
+@@ -37,236 +37,246 @@
+     unsigned int irq_num, intr_cmd;
+     int rv;
+     uint32_t mreg, mval;
++    long ret = 0;
+ 
+-    if (copy_from_user(&ioc, (void *)arg, sizeof(ioc))) {
+-        return -EFAULT;
++    ioc = kmalloc(sizeof(*ioc), GFP_KERNEL);
++    if (!ioc) {
++        return -ENOMEM;
+     }
+ 
+-    ioc.rc = NGBDE_IOC_SUCCESS;
++    if (copy_from_user(ioc, (void *)arg, sizeof(*ioc))) {
++        ret = -EFAULT;
++        goto out;
++    }
++
++    ioc->rc = NGBDE_IOC_SUCCESS;
+ 
+     switch (cmd) {
+     case NGBDE_IOC_MOD_INFO:
+-        ioc.op.mod_info.version = NGBDE_IOC_VERSION;
+-        ioc.op.mod_info.compat = NGBDE_COMPAT_IRQ_INIT;
++        ioc->op.mod_info.version = NGBDE_IOC_VERSION;
++        ioc->op.mod_info.compat = NGBDE_COMPAT_IRQ_INIT;
+         break;
+     case NGBDE_IOC_PROBE_INFO:
+         ngbde_swdev_get_all(NULL, &num_swdev);
+-        ioc.op.probe_info.num_swdev = num_swdev;
++        ioc->op.probe_info.num_swdev = num_swdev;
+         break;
+     case NGBDE_IOC_DEV_INFO:
+-        swdev = ngbde_swdev_get(ioc.devid);
++        swdev = ngbde_swdev_get(ioc->devid);
+         if (!swdev) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+-        ioc.op.dev_info.vendor_id = swdev->vendor_id;
+-        ioc.op.dev_info.device_id = swdev->device_id;
+-        ioc.op.dev_info.revision = swdev->revision;
+-        ioc.op.dev_info.model = swdev->model;
++        ioc->op.dev_info.vendor_id = swdev->vendor_id;
++        ioc->op.dev_info.device_id = swdev->device_id;
++        ioc->op.dev_info.revision = swdev->revision;
++        ioc->op.dev_info.model = swdev->model;
+         break;
+     case NGBDE_IOC_PHYS_ADDR:
+-        swdev = ngbde_swdev_get(ioc.devid);
++        swdev = ngbde_swdev_get(ioc->devid);
+         if (!swdev) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+-        rsrc_type = ioc.op.rsrc_id.type;
+-        rsrc_idx = ioc.op.rsrc_id.inst;
++        rsrc_type = ioc->op.rsrc_id.type;
++        rsrc_idx = ioc->op.rsrc_id.inst;
+         switch (rsrc_type) {
+         case NGBDE_IO_RSRC_DEV_IO:
+             if (rsrc_idx >= NGBDE_NUM_IOWIN_MAX) {
+                 printk(KERN_WARNING
+                        "ngbde: invalid resource index (%d)\n",
+                        rsrc_idx);
+-                ioc.rc = NGBDE_IOC_FAIL;
++                ioc->rc = NGBDE_IOC_FAIL;
+                 break;
+             }
+-            ioc.op.phys_addr.addr = swdev->iowin[rsrc_idx].addr;
+-            ioc.op.phys_addr.size = swdev->iowin[rsrc_idx].size;
++            ioc->op.phys_addr.addr = swdev->iowin[rsrc_idx].addr;
++            ioc->op.phys_addr.size = swdev->iowin[rsrc_idx].size;
+             break;
+         case NGBDE_IO_RSRC_DMA_MEM:
+             if (rsrc_idx >= NGBDE_NUM_DMAPOOL_MAX) {
+                 printk(KERN_WARNING
+                        "ngbde: invalid resource index (%d)\n",
+                        rsrc_idx);
+-                ioc.rc = NGBDE_IOC_FAIL;
++                ioc->rc = NGBDE_IOC_FAIL;
+                 break;
+             }
+-            ioc.op.phys_addr.addr = swdev->dmapool[rsrc_idx].dmamem.paddr;
+-            ioc.op.phys_addr.size = swdev->dmapool[rsrc_idx].dmactrl.size;
++            ioc->op.phys_addr.addr = swdev->dmapool[rsrc_idx].dmamem.paddr;
++            ioc->op.phys_addr.size = swdev->dmapool[rsrc_idx].dmactrl.size;
+             break;
+         case NGBDE_IO_RSRC_DMA_BUS:
+             if (rsrc_idx >= NGBDE_NUM_DMAPOOL_MAX) {
+                 printk(KERN_WARNING
+                        "ngbde: invalid resource index (%d)\n",
+                        rsrc_idx);
+-                ioc.rc = NGBDE_IOC_FAIL;
++                ioc->rc = NGBDE_IOC_FAIL;
+                 break;
+             }
+-            ioc.op.phys_addr.addr = swdev->dmapool[rsrc_idx].dmamem.baddr;
+-            ioc.op.phys_addr.size = swdev->dmapool[rsrc_idx].dmactrl.size;
++            ioc->op.phys_addr.addr = swdev->dmapool[rsrc_idx].dmamem.baddr;
++            ioc->op.phys_addr.size = swdev->dmapool[rsrc_idx].dmactrl.size;
+             break;
+         default:
+             printk(KERN_WARNING
+                    "ngbde: unknown resource type (%d)\n",
+                    rsrc_type);
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+         break;
+     case NGBDE_IOC_INTR_CTRL:
+-        irq_num = ioc.op.intr_ctrl.irq_num;
+-        intr_cmd = ioc.op.intr_ctrl.cmd;
++        irq_num = ioc->op.intr_ctrl.irq_num;
++        intr_cmd = ioc->op.intr_ctrl.cmd;
+         switch (intr_cmd) {
+         case NGBDE_ICTL_INTR_CONN:
+-            if (ngbde_intr_connect(ioc.devid, irq_num) < 0) {
+-                ioc.rc = NGBDE_IOC_FAIL;
++            if (ngbde_intr_connect(ioc->devid, irq_num) < 0) {
++                ioc->rc = NGBDE_IOC_FAIL;
+             }
+             break;
+         case NGBDE_ICTL_INTR_DISC:
+-            if (ngbde_intr_disconnect(ioc.devid, irq_num) < 0) {
+-                ioc.rc = NGBDE_IOC_FAIL;
++            if (ngbde_intr_disconnect(ioc->devid, irq_num) < 0) {
++                ioc->rc = NGBDE_IOC_FAIL;
+             }
+             break;
+         case NGBDE_ICTL_INTR_WAIT:
+-            if (ngbde_intr_wait(ioc.devid, irq_num) < 0) {
+-                ioc.rc = NGBDE_IOC_FAIL;
++            if (ngbde_intr_wait(ioc->devid, irq_num) < 0) {
++                ioc->rc = NGBDE_IOC_FAIL;
+             }
+             break;
+         case NGBDE_ICTL_INTR_STOP:
+-            if (ngbde_intr_stop(ioc.devid, irq_num) < 0) {
+-                ioc.rc = NGBDE_IOC_FAIL;
++            if (ngbde_intr_stop(ioc->devid, irq_num) < 0) {
++                ioc->rc = NGBDE_IOC_FAIL;
+             }
+             break;
+         case NGBDE_ICTL_REGS_CLR:
+-            if (ngbde_intr_regs_clr(ioc.devid, irq_num) < 0) {
+-                ioc.rc = NGBDE_IOC_FAIL;
++            if (ngbde_intr_regs_clr(ioc->devid, irq_num) < 0) {
++                ioc->rc = NGBDE_IOC_FAIL;
+             }
+             break;
+         default:
+             printk(KERN_WARNING
+                    "%s: unknown interrupt control command (%d)\n",
+                    MOD_NAME, intr_cmd);
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+         break;
+     case NGBDE_IOC_IRQ_REG_ADD:
+-        irq_num = ioc.op.irq_reg_add.irq_num;
+-        ireg.status_reg = ioc.op.irq_reg_add.status_reg;
+-        ireg.mask_reg = ioc.op.irq_reg_add.mask_reg;
++        irq_num = ioc->op.irq_reg_add.irq_num;
++        ireg.status_reg = ioc->op.irq_reg_add.status_reg;
++        ireg.mask_reg = ioc->op.irq_reg_add.mask_reg;
+         ireg.umask = 0;
+         ireg.kmask = 0;
+         ireg.kmask_valid = false;
+-        if (ioc.op.irq_reg_add.flags & NGBDE_IRQ_REG_F_KMASK) {
+-            ireg.kmask = ioc.op.irq_reg_add.kmask;
++        if (ioc->op.irq_reg_add.flags & NGBDE_IRQ_REG_F_KMASK) {
++            ireg.kmask = ioc->op.irq_reg_add.kmask;
+             ireg.kmask_valid = true;
+         }
+-        if (ioc.op.irq_reg_add.flags & NGBDE_IRQ_REG_F_UMASK) {
+-            ireg.umask = ioc.op.irq_reg_add.umask;
++        if (ioc->op.irq_reg_add.flags & NGBDE_IRQ_REG_F_UMASK) {
++            ireg.umask = ioc->op.irq_reg_add.umask;
+         } else {
+             /*
+              * Assign non-kernel bits to user mode driver. Note that
+              * this functionality is intended to provide backward
+              * compatibility.
+              */
+-            ireg.umask = ~ioc.op.irq_reg_add.kmask;
++            ireg.umask = ~ioc->op.irq_reg_add.kmask;
+         }
+         ireg.status_is_masked = false;
+-        if (ioc.op.irq_reg_add.flags & NGBDE_IRQ_REG_F_MASKED) {
++        if (ioc->op.irq_reg_add.flags & NGBDE_IRQ_REG_F_MASKED) {
+             ireg.status_is_masked = true;
+         }
+         ireg.mask_w1tc = false;
+-        if (ioc.op.irq_reg_add.flags & NGBDE_IRQ_REG_F_W1TC) {
++        if (ioc->op.irq_reg_add.flags & NGBDE_IRQ_REG_F_W1TC) {
+             ireg.mask_w1tc = true;
+         }
+-        if (ngbde_intr_reg_add(ioc.devid, irq_num, &ireg) < 0) {
++        if (ngbde_intr_reg_add(ioc->devid, irq_num, &ireg) < 0) {
+             printk(KERN_WARNING
+                    "%s: Unable to add interrupt register\n",
+                    MOD_NAME);
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         }
+         break;
+     case NGBDE_IOC_IACK_REG_ADD:
+-        irq_num = ioc.op.iack_reg_add.irq_num;
++        irq_num = ioc->op.iack_reg_add.irq_num;
+         ackreg.ack_valid = true;
+         ackreg.ack_domain = NGBDE_INTR_ACK_IO_DEV;
+-        if (ioc.op.iack_reg_add.flags & NGBDE_IACK_REG_F_PAXB) {
++        if (ioc->op.iack_reg_add.flags & NGBDE_IACK_REG_F_PAXB) {
+             ackreg.ack_domain = NGBDE_INTR_ACK_IO_PAXB;
+         }
+-        ackreg.ack_reg = ioc.op.iack_reg_add.ack_reg;
+-        ackreg.ack_val = ioc.op.iack_reg_add.ack_val;
+-        if (ngbde_intr_ack_reg_add(ioc.devid, irq_num, &ackreg) < 0) {
++        ackreg.ack_reg = ioc->op.iack_reg_add.ack_reg;
++        ackreg.ack_val = ioc->op.iack_reg_add.ack_val;
++        if (ngbde_intr_ack_reg_add(ioc->devid, irq_num, &ackreg) < 0) {
+             printk(KERN_WARNING
+                    "%s: Unable to add interrupt ack register\n",
+                    MOD_NAME);
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         }
+         break;
+     case NGBDE_IOC_IRQ_MASK_WR:
+-        irq_num = ioc.op.irq_mask_wr.irq_num;
+-        mreg = ioc.op.irq_mask_wr.offs;
+-        mval = ioc.op.irq_mask_wr.val;
+-        if (ngbde_intr_mask_write(ioc.devid, irq_num, 0, mreg, mval) < 0) {
++        irq_num = ioc->op.irq_mask_wr.irq_num;
++        mreg = ioc->op.irq_mask_wr.offs;
++        mval = ioc->op.irq_mask_wr.val;
++        if (ngbde_intr_mask_write(ioc->devid, irq_num, 0, mreg, mval) < 0) {
+             printk(KERN_WARNING
+                    "%s: Unable to write shared register\n",
+                    MOD_NAME);
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         }
+         break;
+     case NGBDE_IOC_IRQ_INIT:
+-        rv = ngbde_intr_alloc(ioc.devid, ioc.op.irq_init.irq_max);
++        rv = ngbde_intr_alloc(ioc->devid, ioc->op.irq_init.irq_max);
+         if (rv < 0) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         } else {
+-            ioc.op.irq_init.irq_max = rv;
++            ioc->op.irq_init.irq_max = rv;
+         }
+         break;
+     case NGBDE_IOC_PIO_WIN_MAP:
+-        swdev = ngbde_swdev_get(ioc.devid);
++        swdev = ngbde_swdev_get(ioc->devid);
+         if (!swdev) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+-        addr = ioc.op.pio_win.addr;
+-        size = ioc.op.pio_win.size;
++        addr = ioc->op.pio_win.addr;
++        size = ioc->op.pio_win.size;
+         if (ngbde_pio_map(swdev, addr, size) == NULL) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         }
+         break;
+     case NGBDE_IOC_IIO_WIN_MAP:
+-        swdev = ngbde_swdev_get(ioc.devid);
++        swdev = ngbde_swdev_get(ioc->devid);
+         if (!swdev) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+-        addr = ioc.op.pio_win.addr;
+-        size = ioc.op.pio_win.size;
++        addr = ioc->op.pio_win.addr;
++        size = ioc->op.pio_win.size;
+         if (ngbde_iio_map(swdev, addr, size) == NULL) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         }
+         break;
+     case NGBDE_IOC_PAXB_WIN_MAP:
+-        swdev = ngbde_swdev_get(ioc.devid);
++        swdev = ngbde_swdev_get(ioc->devid);
+         if (!swdev) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+             break;
+         }
+-        addr = ioc.op.pio_win.addr;
+-        size = ioc.op.pio_win.size;
++        addr = ioc->op.pio_win.addr;
++        size = ioc->op.pio_win.size;
+         if (ngbde_paxb_map(swdev, addr, size) == NULL) {
+-            ioc.rc = NGBDE_IOC_FAIL;
++            ioc->rc = NGBDE_IOC_FAIL;
+         }
+         break;
+     default:
+         printk(KERN_ERR "ngbde: invalid ioctl (%08x)\n", cmd);
+-        ioc.rc = NGBDE_IOC_FAIL;
++        ioc->rc = NGBDE_IOC_FAIL;
+         break;
+     }
+ 
+-    if (copy_to_user((void *)arg, &ioc, sizeof(ioc))) {
+-        return -EFAULT;
++    if (copy_to_user((void *)arg, ioc, sizeof(*ioc))) {
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+-    return 0;
++out:
++    kfree(ioc);
++    return ret;
+ }
+--- a/sdklt/linux/knet/ngknet_main.c	2026-05-31 08:40:13.744151398 +0800
++++ b/sdklt/linux/knet/ngknet_main.c	2026-05-31 08:40:58.089977916 +0800
+@@ -1552,8 +1552,9 @@
+ ngknet_do_ioctl(struct net_device *ndev, struct ifreq *ifr, int cmd)
+ {
+     struct ngknet_private *priv = netdev_priv(ndev);
+-    struct hwtstamp_config config;
++    struct hwtstamp_config *config = NULL;
+     int rv;
++    int ret = 0;
+ 
+ #if SAI_FIXUP && KNET_SVTAG_HOTFIX /* SONIC-76482 */
+     if (cmd == NGKNET_IOC_SVTAG_SET) {
+@@ -1570,71 +1571,101 @@
+     } else
+ #endif
+     if (cmd == SIOCSHWTSTAMP) {
+-        if (copy_from_user(&config, ifr->ifr_data, sizeof(config))) {
+-            return -EFAULT;
++        config = kmalloc(sizeof(*config), GFP_KERNEL);
++        if (!config) {
++            ret = -ENOMEM;
++            goto out;
++        }
++        if (copy_from_user(config, ifr->ifr_data, sizeof(*config))) {
++            ret = -EFAULT;
++            goto out;
+         }
+ 
+         if (priv->netif.type != NGKNET_NETIF_T_PORT) {
+-            return -ENOSYS;
++            ret = -ENOSYS;
++            goto out;
+         }
+ 
+-        switch (config.tx_type) {
++        switch (config->tx_type) {
+         case HWTSTAMP_TX_OFF:
+             priv->hwts_tx_type = HWTSTAMP_TX_OFF;
+             rv = ngknet_ptp_tx_config_set(ndev, priv->hwts_tx_type);
+             if (SHR_FAILURE(rv)) {
+-                return -ENOSYS;
++                ret = -ENOSYS;
++                goto out;
+             }
+             break;
+         case HWTSTAMP_TX_ON:
+             priv->hwts_tx_type = HWTSTAMP_TX_ON;
+             rv = ngknet_ptp_tx_config_set(ndev, priv->hwts_tx_type);
+             if (SHR_FAILURE(rv)) {
+-                return -ENOSYS;
++                ret = -ENOSYS;
++                goto out;
+             }
+             break;
+         case HWTSTAMP_TX_ONESTEP_SYNC:
+             priv->hwts_tx_type = HWTSTAMP_TX_ONESTEP_SYNC;
+             rv = ngknet_ptp_tx_config_set(ndev, priv->hwts_tx_type);
+             if (SHR_FAILURE(rv)) {
+-                return -ENOSYS;
++                ret = -ENOSYS;
++                goto out;
+             }
+             break;
+         default:
+-            return -ERANGE;
++            ret = -ERANGE;
++            goto out;
+         }
+ 
+-        switch (config.rx_filter) {
++        switch (config->rx_filter) {
+         case HWTSTAMP_FILTER_NONE:
+-            rv = ngknet_ptp_rx_config_set(ndev, &config.rx_filter);
++            rv = ngknet_ptp_rx_config_set(ndev, &config->rx_filter);
+             if (SHR_FAILURE(rv)) {
+-                return -ENOSYS;
++                ret = -ENOSYS;
++                goto out;
+             }
+             priv->hwts_rx_filter = HWTSTAMP_FILTER_NONE;
+             break;
+         default:
+-            rv = ngknet_ptp_rx_config_set(ndev, &config.rx_filter);
++            rv = ngknet_ptp_rx_config_set(ndev, &config->rx_filter);
+             if (SHR_FAILURE(rv)) {
+-                return -ENOSYS;
++                ret = -ENOSYS;
++                goto out;
+             }
+-            priv->hwts_rx_filter = config.rx_filter;
++            priv->hwts_rx_filter = config->rx_filter;
+             break;
+         }
+ 
+-        return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ? -EFAULT : 0;
++        if (copy_to_user(ifr->ifr_data, config, sizeof(*config))) {
++            ret = -EFAULT;
++            goto out;
++        }
++        goto out;
+     }
+ 
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0))
+     if (cmd == SIOCGHWTSTAMP) {
+-        config.flags = 0;
+-        config.tx_type = priv->hwts_tx_type;
+-        config.rx_filter = priv->hwts_rx_filter;
+-
+-        return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ? -EFAULT : 0;
++        config = kmalloc(sizeof(*config), GFP_KERNEL);
++        if (!config) {
++            ret = -ENOMEM;
++            goto out;
++        }
++        config->flags = 0;
++        config->tx_type = priv->hwts_tx_type;
++        config->rx_filter = priv->hwts_rx_filter;
++
++        if (copy_to_user(ifr->ifr_data, config, sizeof(*config))) {
++            ret = -EFAULT;
++            goto out;
++        }
++        goto out;
+     }
+ #endif
+ 
+-    return -EINVAL;
++    ret = -EINVAL;
++
++out:
++    kfree(config);
++    return ret;
+ }
+ 
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+@@ -2445,7 +2476,7 @@
+ static long
+ ngknet_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ {
+-    struct ngknet_ioctl ioc;
++    struct ngknet_ioctl *ioc = NULL;
+     struct ngknet_dev *dev = NULL;
+     struct net_device *ndev = NULL;
+     struct pdma_dev *pdev = NULL;
+@@ -2454,52 +2485,70 @@
+         ngknet_chan_cfg_t chan_cfg;
+         ngknet_netif_t netif;
+         ngknet_filter_t filter;
+-    } iod;
+-    ngknet_dev_cfg_t *dev_cfg = &iod.dev_cfg;
+-    ngknet_chan_cfg_t *chan_cfg = &iod.chan_cfg;
+-    ngknet_netif_t *netif = &iod.netif;
+-    ngknet_filter_t *filter = &iod.filter;
++    } *iod = NULL;
++    ngknet_dev_cfg_t *dev_cfg;
++    ngknet_chan_cfg_t *chan_cfg;
++    ngknet_netif_t *netif;
++    ngknet_filter_t *filter;
+     char *data = NULL;
+     int dt, gi, qi;
++    long ret = 0;
+ 
+     if (_IOC_TYPE(cmd) != NGKNET_IOC_MAGIC) {
+         DBG_WARN(("Unsupported command (cmd=%d)\n", cmd));
+         return -EINVAL;
+     }
+ 
+-    if (copy_from_user(&ioc, (void *)arg, sizeof(ioc))) {
+-        return -EFAULT;
++    ioc = kmalloc(sizeof(*ioc), GFP_KERNEL);
++    if (!ioc) {
++        return -ENOMEM;
+     }
+ 
+-    ioc.rc = SHR_E_NONE;
++    iod = kmalloc(sizeof(*iod), GFP_KERNEL);
++    if (!iod) {
++        kfree(ioc);
++        return -ENOMEM;
++    }
++
++    dev_cfg = &iod->dev_cfg;
++    chan_cfg = &iod->chan_cfg;
++    netif = &iod->netif;
++    filter = &iod->filter;
++
++    if (copy_from_user(ioc, (void *)arg, sizeof(*ioc))) {
++        ret = -EFAULT;
++        goto out;
++    }
+ 
+-    dev = &ngknet_devices[ioc.unit];
++    ioc->rc = SHR_E_NONE;
++
++    dev = &ngknet_devices[ioc->unit];
+     pdev = &dev->pdma_dev;
+ 
+     if (cmd != NGKNET_VERSION_GET &&
+         cmd != NGKNET_RX_RATE_LIMIT &&
+         cmd != NGKNET_DEV_INIT &&
+         !(dev->flags & NGKNET_DEV_ACTIVE)) {
+-        ioc.rc = SHR_E_UNAVAIL;
+-        if (copy_to_user((void *)arg, &ioc, sizeof(ioc))) {
+-            return -EFAULT;
++        ioc->rc = SHR_E_UNAVAIL;
++        if (copy_to_user((void *)arg, ioc, sizeof(*ioc))) {
++            ret = -EFAULT; goto out;
+         }
+-        return 0;
++        goto out;
+     }
+ 
+-    memset(&iod, 0, sizeof(iod));
++    memset(iod, 0, sizeof(*iod));
+ 
+     switch (cmd) {
+     case NGKNET_VERSION_GET:
+         DBG_CMD(("NGKNET_VERSION_GET\n"));
+-        ioc.op.info.version = NGKNET_IOC_VERSION;
++        ioc->op.info.version = NGKNET_IOC_VERSION;
+         break;
+     case NGKNET_RX_RATE_LIMIT:
+         DBG_CMD(("NGKNET_RX_RATE_LIMIT\n"));
+-        if (ioc.iarg[0]) {
+-            ngknet_rx_rate_limit_set(ioc.iarg[1]);
++        if (ioc->iarg[0]) {
++            ngknet_rx_rate_limit_set(ioc->iarg[1]);
+         } else {
+-            ioc.iarg[1] = ngknet_rx_rate_limit_get();
++            ioc->iarg[1] = ngknet_rx_rate_limit_get();
+         }
+         break;
+     case NGKNET_DEV_INIT:
+@@ -2510,25 +2559,25 @@
+             dev_cfg->dev_id = pdev->dev_id;
+             dev_cfg->nb_grp = pdev->ctrl.nb_grp;
+             dev_cfg->bm_grp = pdev->ctrl.bm_grp;
+-            ioc.rc = ngknet_netif_get(dev, 0, &dev_cfg->base_netif);
+-            if (SHR_FAILURE((int)ioc.rc)) {
++            ioc->rc = ngknet_netif_get(dev, 0, &dev_cfg->base_netif);
++            if (SHR_FAILURE((int)ioc->rc)) {
+                 break;
+             }
+-            if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, dev_cfg,
+-                                 ioc.op.data.len, sizeof(*dev_cfg))) {
+-                return -EFAULT;
++            if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, dev_cfg,
++                                 ioc->op.data.len, sizeof(*dev_cfg))) {
++                ret = -EFAULT; goto out;
+             }
+             break;
+         }
+-        if (kal_copy_from_user(dev_cfg, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*dev_cfg), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(dev_cfg, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*dev_cfg), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+         if (!dev_cfg->name[0] || !dev_cfg->bm_grp ||
+             dev_cfg->bm_grp >= (1 << NUM_GRP_MAX)) {
+             DBG_WARN(("Invalid parameter: name=%s, bm_grp=0x%x\n",
+                       dev_cfg->name, dev_cfg->bm_grp));
+-            ioc.rc = SHR_E_PARAM;
++            ioc->rc = SHR_E_PARAM;
+             break;
+         }
+         memset(pdev, 0, sizeof(*pdev));
+@@ -2547,7 +2596,7 @@
+         }
+         if (pdev->dev_type <= NGKNET_DEV_T_NONE ||
+             pdev->dev_type >= NGKNET_DEV_T_COUNT) {
+-            ioc.rc = SHR_E_PARAM;
++            ioc->rc = SHR_E_PARAM;
+             break;
+         }
+         dev->dev_info.dev_id = pdev->dev_id;
+@@ -2569,36 +2618,36 @@
+         if (pdev->mode != DEV_MODE_KNET && pdev->mode != DEV_MODE_HNET) {
+             pdev->mode = DEV_MODE_KNET;
+         }
+-        ioc.rc = ngknet_dev_probe(ioc.unit, &dev_cfg->base_netif);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_dev_probe(ioc->unit, &dev_cfg->base_netif);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+         if (dev->cbc->dev_init_cb) {
+             dev->cbc->dev_init_cb(&dev->dev_info);
+         }
+ 
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, dev_cfg,
+-                             ioc.op.data.len, sizeof(*dev_cfg))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, dev_cfg,
++                             ioc->op.data.len, sizeof(*dev_cfg))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_DEV_DEINIT:
+         DBG_CMD(("NGKNET_DEV_DEINIT\n"));
+         if (dev->flags & NGKNET_DEV_ACTIVE) {
+-            ioc.rc = ngknet_dev_remove(ioc.unit);
++            ioc->rc = ngknet_dev_remove(ioc->unit);
+         }
+         break;
+     case NGKNET_QUEUE_CONFIG:
+         DBG_CMD(("NGKNET_QUEUE_CONFIG\n"));
+-        if (kal_copy_from_user(chan_cfg, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*chan_cfg), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(chan_cfg, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*chan_cfg), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+         gi = chan_cfg->chan / pdev->grp_queues;
+         if (!(1 << gi & pdev->ctrl.bm_grp)) {
+             DBG_WARN(("Invalid parameter: chan=%d (bm_grp=0x%x)\n",
+                       chan_cfg->chan, pdev->ctrl.bm_grp));
+-            ioc.rc = SHR_E_PARAM;
++            ioc->rc = SHR_E_PARAM;
+             break;
+         }
+         if (chan_cfg->dir == PDMA_Q_RX) {
+@@ -2639,16 +2688,16 @@
+         break;
+     case NGKNET_QUEUE_QUERY:
+         DBG_CMD(("NGKNET_QUEUE_QUERY\n"));
+-        if (kal_copy_from_user(chan_cfg, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*chan_cfg), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(chan_cfg, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*chan_cfg), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+         if (1 << chan_cfg->chan & pdev->ctrl.bm_rxq) {
+             chan_cfg->dir = PDMA_Q_RX;
+         } else if (1 << chan_cfg->chan & pdev->ctrl.bm_txq) {
+             chan_cfg->dir = PDMA_Q_TX;
+         } else {
+-            ioc.rc = SHR_E_UNAVAIL;
++            ioc->rc = SHR_E_UNAVAIL;
+             break;
+         }
+         gi = chan_cfg->chan / pdev->grp_queues;
+@@ -2661,9 +2710,9 @@
+             chan_cfg->rx_buf_size = 0;
+         }
+         chan_cfg->pipe = pdev->ctrl.grp[gi].pipe[qi];
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, chan_cfg,
+-                             ioc.op.data.len, sizeof(*chan_cfg))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, chan_cfg,
++                             ioc->op.data.len, sizeof(*chan_cfg))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_DEV_SUSPEND:
+@@ -2671,17 +2720,17 @@
+         if (rx_rate_limit >= 0) {
+             ngknet_rx_rate_limit_stop(dev);
+         }
+-        if (ioc.iarg[0]) {
++        if (ioc->iarg[0]) {
+             /* Graceful suspend */
+-            ioc.rc = bcmcnet_pdma_dev_suspend(pdev);
++            ioc->rc = bcmcnet_pdma_dev_suspend(pdev);
+         } else {
+             pdev->flags |= PDMA_ABORT;
+-            ioc.rc = bcmcnet_pdma_dev_suspend(pdev);
++            ioc->rc = bcmcnet_pdma_dev_suspend(pdev);
+         }
+         break;
+     case NGKNET_DEV_RESUME:
+         DBG_CMD(("NGKNET_DEV_RESUME\n"));
+-        ioc.rc = bcmcnet_pdma_dev_resume(pdev);
++        ioc->rc = bcmcnet_pdma_dev_resume(pdev);
+         if (rx_rate_limit >= 0) {
+             ngknet_rx_rate_limit_start(dev);
+         }
+@@ -2689,7 +2738,7 @@
+     case NGKNET_DEV_VNET_WAIT:
+         DBG_CMD(("NGKNET_DEV_VNET_WAIT\n"));
+         if (pdev->mode != DEV_MODE_HNET) {
+-            ioc.rc = SHR_E_UNAVAIL;
++            ioc->rc = SHR_E_UNAVAIL;
+             break;
+         }
+         wait_event_interruptible(dev->vnet_wq,
+@@ -2699,7 +2748,7 @@
+     case NGKNET_DEV_HNET_WAKE:
+         DBG_CMD(("NGKNET_DEV_HNET_WAKE\n"));
+         if (pdev->mode != DEV_MODE_HNET) {
+-            ioc.rc = SHR_E_UNAVAIL;
++            ioc->rc = SHR_E_UNAVAIL;
+             break;
+         }
+         if (atomic_read(&dev->hnet_active) != 1) {
+@@ -2710,52 +2759,52 @@
+     case NGKNET_DEV_VNET_DOCK:
+         DBG_CMD(("NGKNET_DEV_VNET_DOCK\n"));
+         if (pdev->mode != DEV_MODE_HNET) {
+-            ioc.rc = SHR_E_UNAVAIL;
++            ioc->rc = SHR_E_UNAVAIL;
+             break;
+         }
+-        if (kal_copy_from_user(&pdev->ctrl.vsync, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(pdev->ctrl.vsync), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(&pdev->ctrl.vsync, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(pdev->ctrl.vsync), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+-        ioc.rc = bcmcnet_pdma_dev_dock(pdev);
++        ioc->rc = bcmcnet_pdma_dev_dock(pdev);
+         break;
+     case NGKNET_DEV_VNET_UNDOCK:
+         DBG_CMD(("NGKNET_DEV_VNET_UNDOCK\n"));
+         if (pdev->mode != DEV_MODE_HNET) {
+-            ioc.rc = SHR_E_UNAVAIL;
++            ioc->rc = SHR_E_UNAVAIL;
+             break;
+         }
+         ngknet_dev_vnet_wake(pdev);
+-        ioc.rc = bcmcnet_pdma_dev_undock(pdev);
++        ioc->rc = bcmcnet_pdma_dev_undock(pdev);
+         break;
+     case NGKNET_RCPU_CONFIG:
+         DBG_CMD(("NGKNET_RCPU_CONFIG\n"));
+-        if (kal_copy_from_user(&dev->rcpu_ctrl, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(dev->rcpu_ctrl), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(&dev->rcpu_ctrl, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(dev->rcpu_ctrl), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_RCPU_GET:
+         DBG_CMD(("NGKNET_RCPU_GET\n"));
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, &dev->rcpu_ctrl,
+-                             ioc.op.data.len, sizeof(dev->rcpu_ctrl))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, &dev->rcpu_ctrl,
++                             ioc->op.data.len, sizeof(dev->rcpu_ctrl))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_INFO_GET:
+         DBG_CMD(("NGKNET_INFO_GET\n"));
+         bcmcnet_pdma_dev_info_get(pdev);
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, &pdev->info,
+-                             ioc.op.data.len, sizeof(pdev->info))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, &pdev->info,
++                             ioc->op.data.len, sizeof(pdev->info))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_STATS_GET:
+         DBG_CMD(("NGKNET_STATS_GET\n"));
+         bcmcnet_pdma_dev_stats_get(pdev);
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, &pdev->stats,
+-                             ioc.op.data.len, sizeof(pdev->stats))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, &pdev->stats,
++                             ioc->op.data.len, sizeof(pdev->stats))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_STATS_RESET:
+@@ -2764,57 +2813,57 @@
+         break;
+     case NGKNET_NETIF_CREATE:
+         DBG_CMD(("NGKNET_NETIF_CREATE\n"));
+-        if (kal_copy_from_user(netif, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*netif), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(netif, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*netif), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+-        ioc.rc = ngknet_netif_create(dev, netif);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_netif_create(dev, netif);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, netif,
+-                             ioc.op.data.len, sizeof(*netif))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, netif,
++                             ioc->op.data.len, sizeof(*netif))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_NETIF_DESTROY:
+         DBG_CMD(("NGKNET_NETIF_DESTROY\n"));
+-        ioc.rc = ngknet_netif_destroy(dev, ioc.iarg[0]);
++        ioc->rc = ngknet_netif_destroy(dev, ioc->iarg[0]);
+         break;
+     case NGKNET_NETIF_GET:
+         DBG_CMD(("NGKNET_NETIF_GET\n"));
+-        ioc.rc = ngknet_netif_get(dev, ioc.iarg[0], netif);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_netif_get(dev, ioc->iarg[0], netif);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, netif,
+-                             ioc.op.data.len, sizeof(*netif))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, netif,
++                             ioc->op.data.len, sizeof(*netif))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_NETIF_NEXT:
+         DBG_CMD(("NGKNET_NETIF_NEXT\n"));
+-        if (kal_copy_from_user(netif, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*netif), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(netif, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*netif), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+-        ioc.rc = ngknet_netif_get_next(dev, netif);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_netif_get_next(dev, netif);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, netif,
+-                             ioc.op.data.len, sizeof(*netif))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, netif,
++                             ioc->op.data.len, sizeof(*netif))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_NETIF_LINK_SET:
+         DBG_CMD(("NGKNET_NETIF_LINK_SET\n"));
+-        ioc.rc = ngknet_netif_get(dev, ioc.iarg[0], netif);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_netif_get(dev, ioc->iarg[0], netif);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+         ndev = dev->vdev[netif->id];
+-        if (ioc.iarg[1]) {
++        if (ioc->iarg[1]) {
+             if (!netif_carrier_ok(ndev)) {
+                 netif_carrier_on(ndev);
+                 netif_tx_wake_all_queues(ndev);
+@@ -2830,90 +2879,101 @@
+         break;
+     case NGKNET_FILT_CREATE:
+         DBG_CMD(("NGKNET_FILT_CREATE\n"));
+-        if (kal_copy_from_user(filter, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*filter), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(filter, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*filter), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+-        ioc.rc = ngknet_filter_create(dev, filter);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_filter_create(dev, filter);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, filter,
+-                             ioc.op.data.len, sizeof(*filter))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, filter,
++                             ioc->op.data.len, sizeof(*filter))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_FILT_DESTROY:
+         DBG_CMD(("NGKNET_FILT_DESTROY\n"));
+-        ioc.rc = ngknet_filter_destroy(dev, ioc.iarg[0]);
++        ioc->rc = ngknet_filter_destroy(dev, ioc->iarg[0]);
+         break;
+     case NGKNET_FILT_GET:
+         DBG_CMD(("NGKNET_FILT_GET\n"));
+-        ioc.rc = ngknet_filter_get(dev, ioc.iarg[0], filter);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_filter_get(dev, ioc->iarg[0], filter);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, filter,
+-                             ioc.op.data.len, sizeof(*filter))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, filter,
++                             ioc->op.data.len, sizeof(*filter))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_FILT_NEXT:
+         DBG_CMD(("NGKNET_FILT_NEXT\n"));
+-        if (kal_copy_from_user(filter, (void *)(unsigned long)ioc.op.data.buf,
+-                               sizeof(*filter), ioc.op.data.len)) {
+-            return -EFAULT;
++        if (kal_copy_from_user(filter, (void *)(unsigned long)ioc->op.data.buf,
++                               sizeof(*filter), ioc->op.data.len)) {
++            ret = -EFAULT; goto out;
+         }
+-        ioc.rc = ngknet_filter_get_next(dev, filter);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_filter_get_next(dev, filter);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             break;
+         }
+-        if (kal_copy_to_user((void *)(unsigned long)ioc.op.data.buf, filter,
+-                             ioc.op.data.len, sizeof(*filter))) {
+-            return -EFAULT;
++        if (kal_copy_to_user((void *)(unsigned long)ioc->op.data.buf, filter,
++                             ioc->op.data.len, sizeof(*filter))) {
++            ret = -EFAULT; goto out;
+         }
+         break;
+     case NGKNET_PTP_DEV_CTRL:
+         DBG_CMD(("NGKNET_PTP_DEV_CTRL\n"));
+-        if (ioc.op.data.len) {
+-            data = kmalloc(ioc.op.data.len, GFP_ATOMIC);
++        if (ioc->op.data.len) {
++            data = kmalloc(ioc->op.data.len, GFP_ATOMIC);
+             if (data == NULL) {
+                 printk("Fatal error: no memory for PTP device ioctl\n");
+-                return -EFAULT;
++                ret = -EFAULT; goto out;
+             }
+-            if (copy_from_user(data, (void *)(unsigned long)ioc.op.data.buf,
+-                               ioc.op.data.len)) {
++            if (copy_from_user(data, (void *)(unsigned long)ioc->op.data.buf,
++                               ioc->op.data.len)) {
+                 kfree(data);
+-                return -EFAULT;
++                data = NULL;
++                ret = -EFAULT; goto out;
+             }
+         }
+-        ioc.rc = ngknet_ptp_dev_ctrl(dev, ioc.iarg[0], data, ioc.op.data.len);
+-        if (SHR_FAILURE((int)ioc.rc)) {
++        ioc->rc = ngknet_ptp_dev_ctrl(dev, ioc->iarg[0], data, ioc->op.data.len);
++        if (SHR_FAILURE((int)ioc->rc)) {
+             if (data) {
+                 kfree(data);
++                data = NULL;
+             }
+             break;
+         }
+-        if (ioc.op.data.len) {
+-            if (copy_to_user((void *)(unsigned long)ioc.op.data.buf, data,
+-                             ioc.op.data.len)) {
++        if (ioc->op.data.len) {
++            if (copy_to_user((void *)(unsigned long)ioc->op.data.buf, data,
++                             ioc->op.data.len)) {
+                 kfree(data);
+-                return -EFAULT;
++                data = NULL;
++                ret = -EFAULT; goto out;
+             }
+             kfree(data);
++            data = NULL;
+         }
+         break;
+     default:
+-        ioc.rc = SHR_E_UNAVAIL;
++        ioc->rc = SHR_E_UNAVAIL;
+         printk("Invalid IOCTL");
+         break;
+     }
+ 
+-    if (copy_to_user((void *)arg, &ioc, sizeof(ioc))) {
+-        return -EFAULT;
++    if (copy_to_user((void *)arg, ioc, sizeof(*ioc))) {
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+-    return 0;
++    ret = 0;
++
++out:
++    kfree(data);
++    kfree(iod);
++    kfree(ioc);
++    return ret;
+ }
+ 
+ static int
+--- a/systems/bde/linux/user/kernel/linux-user-bde.c	2026-05-31 08:40:13.744859168 +0800
++++ b/systems/bde/linux/user/kernel/linux-user-bde.c	2026-05-31 08:40:58.090240824 +0800
+@@ -1767,80 +1767,91 @@
+ static int
+ _ioctl(unsigned int cmd, unsigned long arg)
+ {
+-    lubde_ioctl_t io;
++    lubde_ioctl_t *io = NULL;
+     phys_addr_t cpu_pbase, dma_pbase;
+     ssize_t size;
+     const ibde_dev_t *bde_dev;
+     int inst_id, idx;
+     bde_inst_resource_t *res;
+     uint32_t *mapaddr;
++    int ret = 0;
+ 
+-    if (copy_from_user(&io, (void *)arg, sizeof(io))) {
+-        return -EFAULT;
++    io = kmalloc(sizeof(*io), GFP_KERNEL);
++    if (!io) {
++        return -ENOMEM;
+     }
+ 
+-    io.rc = LUBDE_SUCCESS;
++    if (copy_from_user(io, (void *)arg, sizeof(*io))) {
++        ret = -EFAULT;
++        goto out;
++    }
++
++    io->rc = LUBDE_SUCCESS;
+ 
+     switch(cmd) {
+     case LUBDE_VERSION:
+-        io.d0 = KBDE_VERSION;
++        io->d0 = KBDE_VERSION;
+         break;
+     case LUBDE_GET_NUM_DEVICES:
+-        io.d0 = user_bde->num_devices(io.dev);
++        io->d0 = user_bde->num_devices(io->dev);
+         break;
+     case LUBDE_GET_DEVICE:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        bde_dev = user_bde->get_dev(io.dev);
++        bde_dev = user_bde->get_dev(io->dev);
+         if (bde_dev) {
+-            io.d0 = bde_dev->device;
+-            io.d1 = bde_dev->rev;
+-            io.dx.dw[0] = bde_dev->dev_unique_id;
+-            if (BDE_DEV_MEM_MAPPED(_devices[io.dev].dev_type)) {
++            io->d0 = bde_dev->device;
++            io->d1 = bde_dev->rev;
++            io->dx.dw[0] = bde_dev->dev_unique_id;
++            if (BDE_DEV_MEM_MAPPED(_devices[io->dev].dev_type)) {
+                 /* Get physical address to map */
+-                io.d2 = lkbde_get_dev_phys(io.dev);
+-                io.d3 = lkbde_get_dev_phys_hi(io.dev);
++                io->d2 = lkbde_get_dev_phys(io->dev);
++                io->d3 = lkbde_get_dev_phys_hi(io->dev);
+             }
+         } else {
+-            io.rc = LUBDE_FAIL;
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_GET_DEVICE_TYPE:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        io.d0 = _devices[io.dev].dev_type;
++        io->d0 = _devices[io->dev].dev_type;
+         break;
+     case LUBDE_GET_BUS_FEATURES:
+-        user_bde->pci_bus_features(io.dev, (int *) &io.d0, (int *) &io.d1,
+-                                   (int *) &io.d2);
++        user_bde->pci_bus_features(io->dev, (int *) &io->d0, (int *) &io->d1,
++                                   (int *) &io->d2);
+         break;
+     case LUBDE_PCI_CONFIG_PUT32:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        if (_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) {
+-            user_bde->pci_conf_write(io.dev, io.d0, io.d1);
++        if (_devices[io->dev].dev_type & BDE_PCI_DEV_TYPE) {
++            user_bde->pci_conf_write(io->dev, io->d0, io->d1);
+         } else {
+-            io.rc = LUBDE_FAIL;
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_PCI_CONFIG_GET32:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        if (_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) {
+-            io.d0 = user_bde->pci_conf_read(io.dev, io.d0);
++        if (_devices[io->dev].dev_type & BDE_PCI_DEV_TYPE) {
++            io->d0 = user_bde->pci_conf_read(io->dev, io->d0);
+         } else {
+-            io.rc = LUBDE_FAIL;
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_GET_DMA_INFO:
+-        inst_id = io.dev;
++        inst_id = io->dev;
+         if (_bde_multi_inst) {
+             if (_dma_resource_get(inst_id, &cpu_pbase, &dma_pbase, &size)) {
+-                io.rc = LUBDE_FAIL;
++                io->rc = LUBDE_FAIL;
+             }
+         } else {
+             lkbde_get_dma_info(&cpu_pbase, &dma_pbase, &size);
+@@ -1848,128 +1859,135 @@
+ #ifdef BDE_EDK_SUPPORT
+     case LUBDE_GET_EDK_DMA_INFO:
+         if (cmd == LUBDE_GET_EDK_DMA_INFO) {
+-            inst_id = io.dev;
++            inst_id = io->dev;
+             lkbde_edk_get_dma_info(inst_id, &cpu_pbase, &dma_pbase, &size);
+         }
+ #endif
+-        io.d0 = dma_pbase;
+-        io.d1 = size;
++        io->d0 = dma_pbase;
++        io->d1 = size;
+         /* Optionally enable DMA mmap via /dev/linux-kernel-bde */
+-        io.d2 = USE_LINUX_BDE_MMAP;
++        io->d2 = USE_LINUX_BDE_MMAP;
+         /* Get physical address for mmap */
+-        io.dx.dw[0] = cpu_pbase;
++        io->dx.dw[0] = cpu_pbase;
+ #ifdef PHYS_ADDRS_ARE_64BITS
+-        io.dx.dw[1] = cpu_pbase >> 32;
+-        io.d3 = dma_pbase >> 32;
++        io->dx.dw[1] = cpu_pbase >> 32;
++        io->d3 = dma_pbase >> 32;
+ #else
+-        io.dx.dw[1] = 0;
+-        io.d3 = 0;
++        io->dx.dw[1] = 0;
++        io->d3 = 0;
+ #endif
+         break;
+ 
+ #ifdef INCLUDE_SRAM_DMA
+     case LUBDE_GET_DEV_DMA_INFO:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
+-        }
+-        lkbde_get_sram_dma_info(io.dev, &io.dx.dw[1], &io.dx.dw[0]);
+-        if (io.dx.dw[0] == 0) {
+-            io.rc = LUBDE_FAIL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
++        }
++        lkbde_get_sram_dma_info(io->dev, &io->dx.dw[1], &io->dx.dw[0]);
++        if (io->dx.dw[0] == 0) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+ #endif /* INCLUDE_SRAM_DMA */
+ 
+     case LUBDE_ENABLE_INTERRUPTS:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+         /*
+          * Disable interrupt in case already enabled
+          * This is to handle the use case where userspace
+          * application gets killed abruptly.
+          */
+-        if (_devices[io.dev].enabled) {
++        if (_devices[io->dev].enabled) {
+             if (debug >= 1) {
+                 gprintk("Interrupts already enabled, disable to cleanup\n");
+             }
+-            user_bde->interrupt_disconnect(io.dev);
+-            _devices[io.dev].enabled = 0;
++            user_bde->interrupt_disconnect(io->dev);
++            _devices[io->dev].enabled = 0;
+         }
+-        if (_devices[io.dev].dev_type & BDE_SWITCH_DEV_TYPE) {
+-            if (_devices[io.dev].isr && !_devices[io.dev].enabled) {
++        if (_devices[io->dev].dev_type & BDE_SWITCH_DEV_TYPE) {
++            if (_devices[io->dev].isr && !_devices[io->dev].enabled) {
+                 /* PCI/CMICX Devices */
+-                if ((_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) &&
+-                    (_devices[io.dev].isr == (isr_f)_cmicx_interrupt)) {
+-                    lkbde_intr_cb_register(io.dev,
++                if ((_devices[io->dev].dev_type & BDE_PCI_DEV_TYPE) &&
++                    (_devices[io->dev].isr == (isr_f)_cmicx_interrupt)) {
++                    lkbde_intr_cb_register(io->dev,
+                                            _cmicx_interrupt_pending,
+-                                           _devices+io.dev);
++                                           _devices+io->dev);
+                 }
+ 
+-                user_bde->interrupt_connect(io.dev,
+-                                            _devices[io.dev].isr,
+-                                            _devices+io.dev);
+-                _devices[io.dev].enabled = 1;
++                user_bde->interrupt_connect(io->dev,
++                                            _devices[io->dev].isr,
++                                            _devices+io->dev);
++                _devices[io->dev].enabled = 1;
+             }
+         } else {
+             /* Process ethernet device interrupt */
+ 
+-            if (!_devices[io.dev].enabled) {
+-                user_bde->interrupt_connect(io.dev,
++            if (!_devices[io->dev].enabled) {
++                user_bde->interrupt_connect(io->dev,
+                                             (void(*)(void *))_ether_interrupt,
+-                                            _devices+io.dev);
+-                _devices[io.dev].enabled = 1;
++                                            _devices+io->dev);
++                _devices[io->dev].enabled = 1;
+             }
+         }
+         break;
+     case LUBDE_DISABLE_INTERRUPTS:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
+-        }
+-        if (_devices[io.dev].enabled) {
+-            user_bde->interrupt_disconnect(io.dev);
+-            _devices[io.dev].enabled = 0;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
++        }
++        if (_devices[io->dev].enabled) {
++            user_bde->interrupt_disconnect(io->dev);
++            _devices[io->dev].enabled = 0;
+         }
+         break;
+     case LUBDE_SET_EDK_INTERRUPTS:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
+-        }
+-        res = &_bde_inst_resource[_devices[io.dev].inst];
+-        res->edk_irqs.timer_intrc_offset = io.d0;
+-        res->edk_irqs.timer_intrc_mask =  io.d1;
+-        res->edk_irqs.sw_intr_intrc_offset = io.d2;
+-        res->edk_irqs.sw_intr_intrc_mask = io.d3;
+-        res->edk_irqs.sw_intr_src_bitmap = io.dx.dw[0];
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
++        }
++        res = &_bde_inst_resource[_devices[io->dev].inst];
++        res->edk_irqs.timer_intrc_offset = io->d0;
++        res->edk_irqs.timer_intrc_mask =  io->d1;
++        res->edk_irqs.sw_intr_intrc_offset = io->d2;
++        res->edk_irqs.sw_intr_intrc_mask = io->d3;
++        res->edk_irqs.sw_intr_src_bitmap = io->dx.dw[0];
+         for (idx = 0; idx < MAX_UC_CORES; idx++) {
+-            res->edk_irqs.sw_intr_icfg_reg[idx] = io.dx.dw[idx + 1];
++            res->edk_irqs.sw_intr_icfg_reg[idx] = io->dx.dw[idx + 1];
+         }
+         break;
+     case LUBDE_ENABLE_EDK_INTERRUPTS:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        _devices[io.dev].edk_irq_enabled = 1;
++        _devices[io->dev].edk_irq_enabled = 1;
+         break;
+     case LUBDE_DISABLE_EDK_INTERRUPTS:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        _devices[io.dev].edk_irq_enabled = 0;
++        _devices[io->dev].edk_irq_enabled = 0;
+         break;
+     case LUBDE_WAIT_FOR_INTERRUPT:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        if (_devices[io.dev].dev_type & BDE_SWITCH_DEV_TYPE) {
+-            res = &_bde_inst_resource[_devices[io.dev].inst];
++        if (_devices[io->dev].dev_type & BDE_SWITCH_DEV_TYPE) {
++            res = &_bde_inst_resource[_devices[io->dev].inst];
+ #ifdef BDE_LINUX_NON_INTERRUPTIBLE
+             wait_event_timeout(res->intr_wq,
+                                atomic_read(&res->intr) != 0, 100);
+ 
+ #else
+             /* CMICX Devices */
+-            if ((_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) &&
+-                (_devices[io.dev].isr == (isr_f)_cmicx_interrupt)  &&
++            if ((_devices[io->dev].dev_type & BDE_PCI_DEV_TYPE) &&
++                (_devices[io->dev].isr == (isr_f)_cmicx_interrupt)  &&
+                 (intr_timeout > 0)) {
+                 unsigned long t_jiffies;
+                 int err=0;
+@@ -1980,12 +1998,12 @@
+                 /* Timeout happend and condition not set */
+                 if (err == 0) {
+                     bde_ctrl_t *ctrl;
+-                    ctrl = &_devices[io.dev];
++                    ctrl = &_devices[io->dev];
+                     intr_timeout_count++;
+                     if (debug >= 1) {
+                         gprintk("Timeout happend and condition not set\n");
+                     }
+-                    dump_interrupt_regs(ctrl, io.dev);
++                    dump_interrupt_regs(ctrl, io->dev);
+                 } else if (err == -ERESTARTSYS) {
+                     if (debug >= 1) {
+                        gprintk("Interrupted by Signal\n");
+@@ -2019,18 +2037,19 @@
+         }
+         break;
+    case LUBDE_WAIT_FOR_EDK_INTERRUPT:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        res = &_bde_inst_resource[_devices[io.dev].inst];
++        res = &_bde_inst_resource[_devices[io->dev].inst];
+ #ifdef BDE_LINUX_NON_INTERRUPTIBLE
+         wait_event_timeout(res->edk_intr_wq,
+                            atomic_read(&res->edk_intr) != 0, 100);
+ 
+ #else
+         /* CMICX Devices */
+-        if ((_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) &&
+-            (_devices[io.dev].isr == (isr_f)_cmicx_interrupt) &&
++        if ((_devices[io->dev].dev_type & BDE_PCI_DEV_TYPE) &&
++            (_devices[io->dev].isr == (isr_f)_cmicx_interrupt) &&
+             (intr_timeout > 0)) {
+             unsigned long t_jiffies;
+             int err = 0;
+@@ -2040,12 +2059,12 @@
+             /* Timeout happend and condition not set */
+             if (err == 0) {
+                 bde_ctrl_t *ctrl;
+-                ctrl = &_devices[io.dev];
++                ctrl = &_devices[io->dev];
+                 intr_timeout_count++;
+                 if (debug >= 1) {
+                     gprintk("EDK Interrrupt: Timeout happened\n");
+                 }
+-                dump_interrupt_regs(ctrl, io.dev);
++                dump_interrupt_regs(ctrl, io->dev);
+             } else if (err == -ERESTARTSYS) {
+                 if (debug >= 1) {
+                     gprintk("EDK Interrrupt: Interrupted by Signal\n");
+@@ -2062,156 +2081,165 @@
+     case LUBDE_USLEEP:
+     case LUBDE_UDELAY:
+     case LUBDE_SEM_OP:
+-        return -EINVAL;
++        ret = -EINVAL;
++        goto out;
+     case LUBDE_WRITE_IRQ_MASK:
+         /* CMICx device */
+-        if (_devices[io.dev].isr == (isr_f)_cmicx_interrupt) {
+-            io.rc = lkbde_irq_mask_set(io.dev + LKBDE_IPROC_REG, io.d0, io.d1, 0);
++        if (_devices[io->dev].isr == (isr_f)_cmicx_interrupt) {
++            io->rc = lkbde_irq_mask_set(io->dev + LKBDE_IPROC_REG, io->d0, io->d1, 0);
+         }
+ #ifdef NEED_CMICX_GEN2_INTERRUPT
+-        else if (_devices[io.dev].isr == (isr_f)_cmicx_gen2_interrupt)
++        else if (_devices[io->dev].isr == (isr_f)_cmicx_gen2_interrupt)
+         {
+-            io.rc = lkbde_irq_mask_set(io.dev | LKBDE_IPROC_REG, io.d0, io.d1, 0);
++            io->rc = lkbde_irq_mask_set(io->dev | LKBDE_IPROC_REG, io->d0, io->d1, 0);
+         }
+ #endif
+         else {
+-            io.rc = lkbde_irq_mask_set(io.dev, io.d0, io.d1, 0);
++            io->rc = lkbde_irq_mask_set(io->dev, io->d0, io->d1, 0);
+         }
+         break;
+     case LUBDE_SPI_READ_REG:
+-        if (user_bde->spi_read(io.dev, io.d0, io.dx.buf, io.d1) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (user_bde->spi_read(io->dev, io->d0, io->dx.buf, io->d1) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_SPI_WRITE_REG:
+-        if (user_bde->spi_write(io.dev, io.d0, io.dx.buf, io.d1) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (user_bde->spi_write(io->dev, io->d0, io->dx.buf, io->d1) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_READ_REG_16BIT_BUS:
+-        io.d1 = user_bde->read(io.dev, io.d0);
++        io->d1 = user_bde->read(io->dev, io->d0);
+         break;
+     case LUBDE_WRITE_REG_16BIT_BUS:
+-        io.rc = user_bde->write(io.dev, io.d0, io.d1);
++        io->rc = user_bde->write(io->dev, io->d0, io->d1);
+         break;
+ #ifdef BCM_SAND_SUPPORT
+     case LUBDE_CPU_WRITE_REG:
+     {
+-        if (lkbde_cpu_write(io.dev, io.d0, (uint32*)io.dx.buf) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (lkbde_cpu_write(io->dev, io->d0, (uint32*)io->dx.buf) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     }
+     case LUBDE_CPU_READ_REG:
+     {
+-        if (lkbde_cpu_read(io.dev, io.d0, (uint32*)io.dx.buf) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (lkbde_cpu_read(io->dev, io->d0, (uint32*)io->dx.buf) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     }
+     case LUBDE_CPU_PCI_REGISTER:
+     {
+-        if (lkbde_cpu_pci_register(io.dev) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (lkbde_cpu_pci_register(io->dev) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     }
+ #endif
+     case LUBDE_DEV_RESOURCE:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        bde_dev = user_bde->get_dev(io.dev);
++        bde_dev = user_bde->get_dev(io->dev);
+         if (bde_dev) {
+-            if (BDE_DEV_MEM_MAPPED(_devices[io.dev].dev_type)) {
++            if (BDE_DEV_MEM_MAPPED(_devices[io->dev].dev_type)) {
+                 /* Get physical address to map */
+-                io.rc = lkbde_get_dev_resource(io.dev, io.d0,
+-                                               &io.d2, &io.d3, &io.d1);
++                io->rc = lkbde_get_dev_resource(io->dev, io->d0,
++                                               &io->d2, &io->d3, &io->d1);
+             }
+         } else {
+-            io.rc = LUBDE_FAIL;
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_IPROC_READ_REG:
+-        if (!VALID_DEVICE(io.dev)) {
+-            return -EINVAL;
++        if (!VALID_DEVICE(io->dev)) {
++            ret = -EINVAL;
++            goto out;
+         }
+-        if (_devices[io.dev].dev_type & BDE_AXI_DEV_TYPE) {
+-            mapaddr = ioremap(io.d0, sizeof(uint32_t));
++        if (_devices[io->dev].dev_type & BDE_AXI_DEV_TYPE) {
++            mapaddr = ioremap(io->d0, sizeof(uint32_t));
+             if (mapaddr == NULL) {
+-                io.rc = LUBDE_FAIL;
+-                return -1;
++                io->rc = LUBDE_FAIL;
++                ret = -1;
++                goto out;
+             }
+-            io.d1 = readl(mapaddr);
++            io->d1 = readl(mapaddr);
+             iounmap(mapaddr);
+         } else {
+-            io.d1 = user_bde->iproc_read(io.dev, io.d0);
++            io->d1 = user_bde->iproc_read(io->dev, io->d0);
+         }
+         break;
+     case LUBDE_IPROC_WRITE_REG:
+-        if (user_bde->iproc_write(io.dev, io.d0, io.d1) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (user_bde->iproc_write(io->dev, io->d0, io->d1) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+ #ifdef BDE_EDK_SUPPORT
+     case LUBDE_ATTACH_EDK_INSTANCE:
+-        io.rc = _edk_instance_attach(io.d0, io.d1);
++        io->rc = _edk_instance_attach(io->d0, io->d1);
+         break;
+ #endif
+ #ifdef BCM_INSTANCE_SUPPORT
+     case LUBDE_ATTACH_INSTANCE:
+-        io.rc = _instance_attach(io.d0, io.d1, io.dx.dw);
++        io->rc = _instance_attach(io->d0, io->d1, io->dx.dw);
+         break;
+ #endif
+     case LUBDE_GET_DEVICE_STATE:
+-        io.rc = lkbde_dev_state_get(io.dev, &io.d0);
++        io->rc = lkbde_dev_state_get(io->dev, &io->d0);
+         break;
+     case LUBDE_REPROBE:
+-        io.rc = _device_reprobe();
++        io->rc = _device_reprobe();
+         break;
+     case LUBDE_GET_DEVICE_PCI_INFO:
+-        if (_devices[io.dev].dev_type & BDE_PCI_DEV_TYPE) {
+-            if (lkbde_get_dev_pci_info(io.dev, &io.d0, &io.d1, &io.d2) < 0)
+-                io.rc = LUBDE_FAIL;
++        if (_devices[io->dev].dev_type & BDE_PCI_DEV_TYPE) {
++            if (lkbde_get_dev_pci_info(io->dev, &io->d0, &io->d1, &io->d2) < 0)
++                io->rc = LUBDE_FAIL;
+         } else {
+-            io.rc = LUBDE_FAIL;
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_BAR2_READ32:
+-        io.d1 = user_bde->read(io.dev, io.d0);
++        io->d1 = user_bde->read(io->dev, io->d0);
+         break;
+     case LUBDE_BAR2_WRITE32:
+-        if (user_bde->write(io.dev, io.d0, io.d1) == -1) {
+-            io.rc = LUBDE_FAIL;
++        if (user_bde->write(io->dev, io->d0, io->d1) == -1) {
++            io->rc = LUBDE_FAIL;
+         }
+         break;
+     case LUBDE_BAR2_READ64:
+         {
+             uint64_t data;
+-            data = user_bde->read64(io.dev, io.d0);
+-            io.d1 = (uint32_t)data;
+-            io.d2 = (uint32_t)(data >> 32);
++            data = user_bde->read64(io->dev, io->d0);
++            io->d1 = (uint32_t)data;
++            io->d2 = (uint32_t)(data >> 32);
+         }
+         break;
+     case LUBDE_BAR2_WRITE64:
+         {
+             uint64_t val;
+-            val = ((uint64_t)io.d2 << 32) |  (uint64_t)io.d1;
+-            user_bde->write64(io.dev, io.d0, val);
++            val = ((uint64_t)io->d2 << 32) |  (uint64_t)io->d1;
++            user_bde->write64(io->dev, io->d0, val);
+         }
+         break;
+ 
+     default:
+         gprintk("Error: Invalid ioctl (%08x)\n", cmd);
+-        io.rc = LUBDE_FAIL;
++        io->rc = LUBDE_FAIL;
+         break;
+     }
+ 
+-    if (copy_to_user((void *)arg, &io, sizeof(io))) {
+-        return -EFAULT;
++    if (copy_to_user((void *)arg, io, sizeof(*io))) {
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+-    return 0;
++    ret = 0;
++
++out:
++    kfree(io);
++    return ret;
+ }
+ 
+ /* Workaround for broken Busybox/PPC insmod */
+--- a/systems/linux/kernel/modules/bcm-knet/bcm-knet.c	2026-05-31 08:40:13.742587284 +0800
++++ b/systems/linux/kernel/modules/bcm-knet/bcm-knet.c	2026-05-31 08:41:05.404067905 +0800
+@@ -6317,7 +6317,8 @@
+ {
+     bkn_priv_t *priv;
+     bkn_switch_info_t *sinfo;
+-    struct hwtstamp_config config;
++    struct hwtstamp_config *config = NULL;
++    int ret = 0;
+ 
+     DBG_PTP(("bkn_ioctl: module_initialized:%d\n", module_initialized));
+ 
+@@ -6336,61 +6337,86 @@
+     sinfo = priv->sinfo;
+ 
+     if (cmd == SIOCSHWTSTAMP) {
+-        if (copy_from_user(&config, ifr->ifr_data, sizeof(config))) {
+-            return -EFAULT;
++        config = kmalloc(sizeof(*config), GFP_KERNEL);
++        if (!config) {
++            return -ENOMEM;
++        }
++
++        if (copy_from_user(config, ifr->ifr_data, sizeof(*config))) {
++            ret = -EFAULT;
++            goto out;
+         }
+ 
+         if (!knet_hw_tstamp_enable_cb || !knet_hw_tstamp_disable_cb) {
+-            return -ENOSYS;
++            ret = -ENOSYS;
++            goto out;
+         }
+ 
+-        switch (config.tx_type) {
++        switch (config->tx_type) {
+         case HWTSTAMP_TX_OFF:
+-            knet_hw_tstamp_disable_cb(sinfo->dev_no, priv->phys_port, config.tx_type);
+-            priv->tx_hwts = (config.tx_type);
++            knet_hw_tstamp_disable_cb(sinfo->dev_no, priv->phys_port, config->tx_type);
++            priv->tx_hwts = (config->tx_type);
+             break;
+         case HWTSTAMP_TX_ON:
+-            knet_hw_tstamp_enable_cb(sinfo->dev_no, priv->phys_port, config.tx_type);
+-            priv->tx_hwts = (config.tx_type);
++            knet_hw_tstamp_enable_cb(sinfo->dev_no, priv->phys_port, config->tx_type);
++            priv->tx_hwts = (config->tx_type);
+             break;
+         case HWTSTAMP_TX_ONESTEP_SYNC:
+-            knet_hw_tstamp_enable_cb(sinfo->dev_no, priv->phys_port, config.tx_type);
+-            priv->tx_hwts = (config.tx_type);
++            knet_hw_tstamp_enable_cb(sinfo->dev_no, priv->phys_port, config->tx_type);
++            priv->tx_hwts = (config->tx_type);
+             break;
+         default:
+-            return -ERANGE;
++            ret = -ERANGE;
++            goto out;
+         }
+ 
+-        switch (config.rx_filter) {
++        switch (config->rx_filter) {
+         case HWTSTAMP_FILTER_NONE:
+             if (priv->rx_hwts) {
+-                knet_hw_tstamp_disable_cb(sinfo->dev_no, priv->phys_port, config.tx_type);
++                knet_hw_tstamp_disable_cb(sinfo->dev_no, priv->phys_port, config->tx_type);
+                 priv->rx_hwts = 0;
+             }
+             break;
+         default:
+             if (!priv->rx_hwts) {
+-                knet_hw_tstamp_enable_cb(sinfo->dev_no, priv->phys_port, config.tx_type);
++                knet_hw_tstamp_enable_cb(sinfo->dev_no, priv->phys_port, config->tx_type);
+                 priv->rx_hwts = 1;
+             }
+-            config.rx_filter = HWTSTAMP_FILTER_ALL;
++            config->rx_filter = HWTSTAMP_FILTER_ALL;
+             break;
+         }
+ 
+-        return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ? -EFAULT : 0;
++        if (copy_to_user(ifr->ifr_data, config, sizeof(*config))) {
++            ret = -EFAULT;
++            goto out;
++        }
++        goto out;
+     }
+ 
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0))
+     if (cmd == SIOCGHWTSTAMP) {
+-        config.flags = 0;
+-        config.tx_type = priv->tx_hwts;
+-        config.rx_filter = priv->rx_hwts ? HWTSTAMP_FILTER_ALL : HWTSTAMP_FILTER_NONE;
++        config = kmalloc(sizeof(*config), GFP_KERNEL);
++        if (!config) {
++            return -ENOMEM;
++        }
++
++        config->flags = 0;
++        config->tx_type = priv->tx_hwts;
++        config->rx_filter = priv->rx_hwts ? HWTSTAMP_FILTER_ALL : HWTSTAMP_FILTER_NONE;
+ 
+-        return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ? -EFAULT : 0;
++        if (copy_to_user(ifr->ifr_data, config, sizeof(*config))) {
++            ret = -EFAULT;
++            goto out;
++        }
++        goto out;
+     }
+ #endif
+ 
+-    return -EINVAL;
++    ret = -EINVAL;
++
++out:
++    kfree(config);
++    return ret;
+ }
+ #endif
+ 
+@@ -7756,16 +7782,23 @@
+     bkn_priv_t *priv;
+     bkn_switch_info_t *sinfo;
+     unsigned long flags;
+-    char link_str[40];
++    char *link_str = NULL;
+     char *ptr;
+     char *newline;
++    int ret = 0;
+ 
+-    if (count > sizeof(link_str)) {
+-        count = sizeof(link_str) - 1;
+-        link_str[count] = '\0';
++    link_str = kmalloc(40, GFP_KERNEL);
++    if (!link_str) {
++        return -ENOMEM;
+     }
++
++    if (count >= 40) {
++        count = 39;
++    }
++    link_str[count] = '\0';
+     if (copy_from_user(link_str, buf, count)) {
+-        return -EFAULT;
++        ret = -EFAULT;
++        goto out;
+     }
+     link_str[count] = 0;
+     newline = strchr(link_str, '\n');
+@@ -7777,7 +7810,8 @@
+     if ((ptr = strchr(link_str, '=')) == NULL &&
+         (ptr = strchr(link_str, ':')) == NULL) {
+         gprintk("Error: link syntax not recognized: '%s'\n", link_str);
+-        return count;
++        ret = count;
++        goto out;
+     }
+     *ptr++ = 0;
+ 
+@@ -7803,14 +7837,18 @@
+                 gprintk("Warning: unknown link state setting: '%s'\n", ptr);
+             }
+             spin_unlock_irqrestore(&sinfo->lock, flags);
+-            return count;
++            ret = count;
++            goto out;
+         }
+         spin_unlock_irqrestore(&sinfo->lock, flags);
+     }
+ 
+     gprintk("Warning: unknown network interface: '%s'\n", link_str);
++    ret = count;
+ 
+-    return count;
++out:
++    kfree(link_str);
++    return ret;
+ }
+ 
+ struct proc_ops bkn_proc_link_file_ops = {
+@@ -7881,23 +7919,31 @@
+                     size_t count, loff_t *loff)
+ {
+     bkn_switch_info_t *sinfo;
+-    char rate_str[80];
++    char *rate_str = NULL;
+     char *ptr;
+     int unit, chan;
++    int ret = 0;
+ 
+-    if (count > sizeof(rate_str)) {
+-        count = sizeof(rate_str) - 1;
+-        rate_str[count] = '\0';
++    rate_str = kmalloc(80, GFP_KERNEL);
++    if (!rate_str) {
++        return -ENOMEM;
++    }
++
++    if (count >= 80) {
++        count = 79;
+     }
++    rate_str[count] = '\0';
+     if (copy_from_user(rate_str, buf, count)) {
+-        return -EFAULT;
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+     unit = simple_strtol(rate_str, NULL, 10);
+     sinfo = bkn_sinfo_from_unit(unit);
+     if (sinfo == NULL) {
+         gprintk("Warning: unknown unit: %d\n", unit);
+-        return count;
++        ret = count;
++        goto out;
+     }
+ 
+     if ((ptr = strstr(rate_str, "rx_rate=")) != NULL) {
+@@ -7919,8 +7965,11 @@
+     } else {
+         gprintk("Warning: unknown configuration setting\n");
+     }
++    ret = count;
+ 
+-    return count;
++out:
++    kfree(rate_str);
++    return ret;
+ }
+ 
+ struct proc_ops bkn_proc_rate_file_ops = {
+@@ -8198,23 +8247,31 @@
+                      size_t count, loff_t *loff)
+ {
+     bkn_switch_info_t *sinfo;
+-    char debug_str[40];
++    char *debug_str = NULL;
+     char *ptr;
+     int unit;
++    int ret = 0;
++
++    debug_str = kmalloc(40, GFP_KERNEL);
++    if (!debug_str) {
++        return -ENOMEM;
++    }
+ 
+-    if (count > sizeof(debug_str)) {
+-        count = sizeof(debug_str) - 1;
+-        debug_str[count] = '\0';
++    if (count >= 40) {
++        count = 39;
+     }
++    debug_str[count] = '\0';
+     if (copy_from_user(debug_str, buf, count)) {
+-        return -EFAULT;
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+     unit = simple_strtol(debug_str, NULL, 10);
+     sinfo = bkn_sinfo_from_unit(unit);
+     if (sinfo == NULL) {
+         gprintk("Warning: unknown unit: %d\n", unit);
+-        return count;
++        ret = count;
++        goto out;
+     }
+ 
+     if ((ptr = strstr(debug_str, "debug=")) != NULL) {
+@@ -8223,8 +8280,11 @@
+     } else {
+         gprintk("Warning: unknown configuration setting\n");
+     }
++    ret = count;
+ 
+-    return count;
++out:
++    kfree(debug_str);
++    return ret;
+ }
+ 
+ /*
+@@ -8392,25 +8452,33 @@
+     bkn_switch_info_t *sinfo;
+     struct list_head *flist;
+     bkn_filter_t *filter;
+-    char debug_str[40];
++    char *debug_str = NULL;
+     char *ptr;
+     int unit;
+     int clear_mask;
+     int chan;
++    int ret = 0;
+ 
+-    if (count > sizeof(debug_str)) {
+-        count = sizeof(debug_str) - 1;
+-        debug_str[count] = '\0';
++    debug_str = kmalloc(40, GFP_KERNEL);
++    if (!debug_str) {
++        return -ENOMEM;
+     }
++
++    if (count >= 40) {
++        count = 39;
++    }
++    debug_str[count] = '\0';
+     if (copy_from_user(debug_str, buf, count)) {
+-        return -EFAULT;
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+     unit = simple_strtol(debug_str, NULL, 10);
+     sinfo = bkn_sinfo_from_unit(unit);
+     if (sinfo == NULL) {
+         gprintk("Warning: unknown unit: %d\n", unit);
+-        return count;
++        ret = count;
++        goto out;
+     }
+ 
+     clear_mask = 0;
+@@ -8438,8 +8506,11 @@
+             filter->hits = 0;
+         }
+     }
++    ret = count;
+ 
+-    return count;
++out:
++    kfree(debug_str);
++    return ret;
+ }
+ 
+ struct proc_ops bkn_proc_stats_file_ops = {
+@@ -8547,25 +8618,33 @@
+                       size_t count, loff_t *loff)
+ {
+     bkn_switch_info_t *sinfo;
+-    char debug_str[40];
++    char *debug_str = NULL;
+     char *ptr;
+     int unit;
+     int clear_mask;
+     int chan;
++    int ret = 0;
++
++    debug_str = kmalloc(40, GFP_KERNEL);
++    if (!debug_str) {
++        return -ENOMEM;
++    }
+ 
+-    if (count > sizeof(debug_str)) {
+-        count = sizeof(debug_str) - 1;
+-        debug_str[count] = '\0';
++    if (count >= 40) {
++        count = 39;
+     }
++    debug_str[count] = '\0';
+     if (copy_from_user(debug_str, buf, count)) {
+-        return -EFAULT;
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+     unit = simple_strtol(debug_str, NULL, 10);
+     sinfo = bkn_sinfo_from_unit(unit);
+     if (sinfo == NULL) {
+         gprintk("Warning: unknown unit: %d\n", unit);
+-        return count;
++        ret = count;
++        goto out;
+     }
+ 
+     clear_mask = 0;
+@@ -8618,8 +8697,11 @@
+             sinfo->rx[chan].sync_maxloop = 0;
+         }
+     }
++    ret = count;
+ 
+-    return count;
++out:
++    kfree(debug_str);
++    return ret;
+ }
+ 
+ struct proc_ops bkn_proc_dstats_file_ops = {
+@@ -8692,16 +8774,23 @@
+     bkn_switch_info_t *sinfo;
+     bkn_priv_t *priv;
+     struct net_device *dev;
+-    char debug_str[40];
++    char *debug_str = NULL;
+     char *ptr;
+     int clear_mask;
++    int ret = 0;
+ 
+-    if (count > sizeof(debug_str)) {
+-        count = sizeof(debug_str) - 1;
+-        debug_str[count] = '\0';
++    debug_str = kmalloc(40, GFP_KERNEL);
++    if (!debug_str) {
++        return -ENOMEM;
+     }
++
++    if (count >= 40) {
++        count = 39;
++    }
++    debug_str[count] = '\0';
+     if (copy_from_user(debug_str, buf, count)) {
+-        return -EFAULT;
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+     clear_mask = 0;
+@@ -8726,8 +8815,11 @@
+ 
+         }
+     }
++    ret = count;
+ 
+-    return count;
++out:
++    kfree(debug_str);
++    return ret;
+ }
+ 
+ struct proc_ops bkn_proc_ptp_stats_file_ops = {
+@@ -10549,64 +10641,85 @@
+ static int
+ _ioctl(unsigned int cmd, unsigned long arg)
+ {
+-    bkn_ioctl_t io;
+-    kcom_msg_t kmsg;
++    bkn_ioctl_t *io = NULL;
++    kcom_msg_t *kmsg = NULL;
++    int ret = 0;
+ 
+     if (!module_initialized) {
+         return -EFAULT;
+     }
+ 
+-    if (copy_from_user(&io, (void*)arg, sizeof(io))) {
+-        return -EFAULT;
++    io = kmalloc(sizeof(*io), GFP_KERNEL);
++    if (!io) {
++        return -ENOMEM;
+     }
+ 
+-    if (io.len > sizeof(kmsg)) {
+-        return -EINVAL;
++    kmsg = kmalloc(sizeof(*kmsg), GFP_KERNEL);
++    if (!kmsg) {
++        kfree(io);
++        return -ENOMEM;
++    }
++
++    if (copy_from_user(io, (void*)arg, sizeof(*io))) {
++        ret = -EFAULT;
++        goto out;
++    }
++
++    if (io->len > sizeof(*kmsg)) {
++        ret = -EINVAL;
++        goto out;
+     }
+ 
+-    io.rc = 0;
++    io->rc = 0;
+ 
+     switch(cmd) {
+     case 0:
+-        if (io.len > 0) {
+-            if (copy_from_user(&kmsg, (void *)(unsigned long)io.buf, io.len)) {
+-                return -EFAULT;
++        if (io->len > 0) {
++            if (copy_from_user(kmsg, (void *)(unsigned long)io->buf, io->len)) {
++                ret = -EFAULT;
++                goto out;
+             }
+             ioctl_cmd++;
+-            io.len = bkn_handle_cmd_req(&kmsg, io.len);
++            io->len = bkn_handle_cmd_req(kmsg, io->len);
+             ioctl_cmd--;
+         } else {
+-            memset(&kmsg, 0, sizeof(kcom_msg_t));
++            memset(kmsg, 0, sizeof(*kmsg));
+             /*
+              * Retrive the kmsg.hdr.unit from user space. The dma event queue
+              * selection is based the instance derived from unit.
+              */
+-            if (copy_from_user(&kmsg, (void *)(unsigned long)io.buf, sizeof(kmsg))) {
+-                return -EFAULT;
++            if (copy_from_user(kmsg, (void *)(unsigned long)io->buf, sizeof(*kmsg))) {
++                ret = -EFAULT;
++                goto out;
+             }
+-            kmsg.hdr.type = KCOM_MSG_TYPE_EVT;
+-            kmsg.hdr.opcode = KCOM_M_DMA_INFO;
++            kmsg->hdr.type = KCOM_MSG_TYPE_EVT;
++            kmsg->hdr.opcode = KCOM_M_DMA_INFO;
+             ioctl_evt++;
+-            io.len = bkn_get_next_dma_event((kcom_msg_dma_info_t *)&kmsg);
++            io->len = bkn_get_next_dma_event((kcom_msg_dma_info_t *)kmsg);
+             ioctl_evt--;
+         }
+-        if (io.len > 0) {
+-            if (copy_to_user((void *)(unsigned long)io.buf, &kmsg, io.len)) {
+-                return -EFAULT;
++        if (io->len > 0) {
++            if (copy_to_user((void *)(unsigned long)io->buf, kmsg, io->len)) {
++                ret = -EFAULT;
++                goto out;
+             }
+         }
+         break;
+     default:
+         gprintk("Invalid IOCTL");
+-        io.rc = -1;
++        io->rc = -1;
+         break;
+     }
+ 
+-    if (copy_to_user((void*)arg, &io, sizeof(io))) {
+-        return -EFAULT;
++    if (copy_to_user((void*)arg, io, sizeof(*io))) {
++        ret = -EFAULT;
++        goto out;
+     }
+ 
+-    return 0;
++out:
++    kfree(kmsg);
++    kfree(io);
++    return ret;
+ }
+ 
+ static gmodule_t _gmodule = {

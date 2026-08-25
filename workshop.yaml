@@ -1,0 +1,88 @@
+name: opennsl
+base: ubuntu@26.04
+sdks:
+  - name: project-build-env
+actions:
+  setup: |
+    set -e
+    KERNVERSION=7.0.0-1002
+    echo "==> Updating apt and installing build dependencies..."
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        software-properties-common
+
+    echo "==> Adding PPA and installing kernel headers..."
+    sudo add-apt-repository -y ppa:canonical-kernel-team/bootstrap || true
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        linux-sonic-headers-${KERNVERSION} \
+        linux-headers-sonic \
+        build-essential \
+        debhelper \
+        bzip2 \
+        fakeroot
+
+    echo "==> Setting up kernel symlinks..."
+    sudo mkdir -p /lib/modules/${KERNVERSION}-sonic
+    sudo rm -rf /lib/modules/${KERNVERSION}-sonic/build /lib/modules/${KERNVERSION}-sonic/source
+    sudo ln -sf /usr/src/linux-sonic-headers-${KERNVERSION} /lib/modules/${KERNVERSION}-sonic/source
+    sudo ln -sf /usr/src/linux-headers-${KERNVERSION}-sonic /lib/modules/${KERNVERSION}-sonic/build
+    echo "Setup complete."
+  build: |
+    set -e
+    KERNVERSION=7.0.0-1002
+    KV=${KERNVERSION}-sonic
+    BUILD_SRC=/tmp/build-src
+
+    echo "==> Preparing build source..."
+    rm -rf ${BUILD_SRC}
+    mkdir -p ${BUILD_SRC}
+    (cd /project && tar cf - --exclude='.git' --exclude='.workshop*' --exclude='build' --exclude='*.lock' .) | (cd ${BUILD_SRC} && tar xf -)
+
+    echo "==> Building legacy kernel modules..."
+    cd ${BUILD_SRC}
+    make -C systems/linux/user/x86-smp_generic_64-2_6 \
+        SDK=${BUILD_SRC} \
+        LINUX_UAPI_SPLIT=1 DEBIAN_LINUX_HEADER=1 BUILD_KNET_CB=1 \
+        KERNDIR=/usr/src/linux-headers-${KERNVERSION}-sonic \
+        KERNEL_SRC=/usr/src/linux-sonic-headers-${KERNVERSION}
+
+    echo "==> Building sdklt kernel modules..."
+    make -C sdklt/ \
+        SDK=${BUILD_SRC} \
+        BUILD_KNET_CB=1 \
+        KDIR=/usr/src/linux-headers-${KERNVERSION}-sonic \
+        kmod
+
+    echo "==> Copying built modules to output..."
+    mkdir -p /project/build
+    cp ${BUILD_SRC}/build/linux/user/x86-smp_generic_64-2_6/linux-*.ko /project/build/ 2>/dev/null || true
+    cp ${BUILD_SRC}/build/linux-x86-smp_generic_64-2_6/x86-smp_generic_64-2_6/linux-*.ko /project/build/ 2>/dev/null || true
+    cp ${BUILD_SRC}/sdklt/build/linux_*.ko /project/build/ 2>/dev/null || true
+    find ${BUILD_SRC}/sdklt/build -name 'linux_*.ko' -type f -exec cp {} /project/build/ \; 2>/dev/null || true
+
+    echo "Build complete. Modules in /project/build/"
+    ls -la /project/build/*.ko 2>/dev/null || echo "  (no .ko files yet)"
+  package: |
+    set -e
+    KERNVERSION=7.0.0-1002
+    KV=${KERNVERSION}-sonic
+    BUILD_SRC=/tmp/build-src
+
+    echo "==> Installing files for packaging..."
+    cd ${BUILD_SRC}
+    fakeroot debian/rules KVERSION=${KV} KERNVERSION=${KERNVERSION} install
+
+    echo "==> Building .deb package..."
+    mkdir -p /project/build
+    fakeroot dpkg-deb --build debian/opennsl-modules \
+        /project/build/opennsl-modules-${KV}_8.4.0.2_amd64.deb
+
+    echo "Package: /project/build/opennsl-modules-${KV}_8.4.0.2_amd64.deb"
+    dpkg-deb --info /project/build/opennsl-modules-${KV}_8.4.0.2_amd64.deb 2>&1 | head -5
+  clean: |
+    set -e
+    echo "Cleaning build artifacts..."
+    rm -rf /tmp/build-src
+    rm -rf /project/build/linux-*.ko /project/build/linux_*.ko
+    echo "Clean complete."

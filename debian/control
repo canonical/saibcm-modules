@@ -1,0 +1,21 @@
+Source: opennsl
+Section: kernel
+Priority: optional
+Maintainer: Henry Mao <henry.mao@canonical.com>
+Build-Depends: debhelper-compat (= 13), bzip2, build-essential,
+ linux-sonic-headers-7.0.0-1002, linux-headers-sonic
+Standards-Version: 4.7.0
+Vcs-Git: https://github.com/henrymao-zz/opennsl.git
+Vcs-Browser: https://github.com/henrymao-zz/opennsl
+
+Package: opennsl-modules
+Architecture: amd64
+Section: kernel
+Depends: linux-image-7.0.0-1002-sonic | linux-image-sonic
+Description: kernel modules for Broadcom SAI (SONiC)
+ This package provides the kernel modules for Broadcom switch ASICs
+ used in the SONiC (Software for Open Networking in the Cloud) platform.
+ .
+ Includes legacy BDE/KNET modules and next-generation SDKLT modules
+ (ngbde, ngknet, ngknetcb) for Broadcom device enumeration and kernel
+ networking.

@@ -1,0 +1,148 @@
+--- a/sdklt/linux/include/lkm/lkm.h	2026-05-29 09:54:45.185150584 +0800
++++ b/sdklt/linux/include/lkm/lkm.h	2026-05-29 10:18:52.637606846 +0800
+@@ -1,3 +1,7 @@
++#ifndef strlcpy
++#define strlcpy(d,s,n) strscpy(d,s,n)
++#endif
++
+ /*! \file lkm.h
+  *
+  * Linux compatibility macros.
+@@ -118,7 +122,7 @@
+ #else
+ #define timer_context_t struct timer_list *
+ #define timer_arg(var, context, timer_fieldname) \
+-    from_timer(var, context, timer_fieldname)
++    container_of(context, typeof(*var), timer_fieldname)
+ #endif
+ 
+ #ifndef setup_timer
+@@ -138,6 +142,7 @@
+ }
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0)
+ #ifndef PCI_IRQ_LEGACY
+ /* Emulate new IRQ API if not available */
+ #define PCI_IRQ_LEGACY          (1 << 0)
+@@ -168,6 +173,14 @@
+ {
+     return dev->irq;
+ }
++#endif /* PCI_IRQ_LEGACY */
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0) */
++
++#ifndef MAX_ORDER
++#define MAX_ORDER MAX_PAGE_ORDER
++#endif
++#ifndef PCI_IRQ_LEGACY
++#define PCI_IRQ_LEGACY PCI_IRQ_INTX
+ #endif
+ 
+ #endif /* LKM_H */
+--- a/sdklt/linux/knet/ngknet_extra.c	2026-05-29 09:54:45.185579909 +0800
++++ b/sdklt/linux/knet/ngknet_extra.c	2026-05-29 10:12:07.938365468 +0800
+@@ -488,7 +488,7 @@
+ void
+ ngknet_rx_rate_limit_cleanup(void)
+ {
+-    del_timer_sync(&rl_ctrl.timer);
++    timer_delete_sync(&rl_ctrl.timer);
+ }
+ 
+ int
+--- a/sdklt/linux/knet/ngknet_main.c	2026-05-29 09:54:45.185579909 +0800
++++ b/sdklt/linux/knet/ngknet_main.c	2026-05-29 10:12:07.947338662 +0800
+@@ -1680,7 +1680,7 @@
+ 
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+ static int
+-ngknet_get_ts_info(struct net_device *ndev, struct ethtool_ts_info *info)
++ngknet_get_ts_info(struct net_device *ndev, struct kernel_ethtool_ts_info *info)
+ {
+     int rv;
+ 
+--- a/sdklt/linux/bde/ngbde_iproc_probe.c	2026-05-29 09:54:45.184273929 +0800
++++ b/sdklt/linux/bde/ngbde_iproc_probe.c	2026-05-29 10:12:07.961931799 +0800
+@@ -115,10 +115,9 @@
+  *
+  * \retval 0 No errors
+  */
+-static int
++static void
+ iproc_cmicd_remove(struct platform_device *pldev)
+ {
+-    return 0;
+ }
+ 
+ /*! Matching compatible property with device tree. */
+--- a/systems/bde/linux/kernel/linux-kernel-bde.c	2026-05-29 09:54:45.187312849 +0800
++++ b/systems/bde/linux/kernel/linux-kernel-bde.c	2026-05-29 10:12:07.933352445 +0800
+@@ -3890,7 +3890,7 @@
+ static void
+ lkbde_isrtick(struct timer_list *t)
+ {
+-    bde_ctrl_t *ctrl = from_timer(ctrl, t, isr_tick);
++    bde_ctrl_t *ctrl = container_of(t, bde_ctrl_t, isr_tick);
+     return lkbde_isrtick_func(ctrl);
+ }
+ #endif
+@@ -4150,7 +4150,7 @@
+         if (ctrl->use_msi >= PCI_USE_INT_MSI) {
+             _msi_disconnect(ctrl);
+             if (ctrl->intr_pending) {
+-                del_timer_sync(&ctrl->isr_tick);
++                timer_delete_sync(&ctrl->isr_tick);
+             }
+         }
+ #endif
+--- a/systems/linux/kernel/modules/bcm-knet/bcm-knet.c	2026-05-29 09:54:45.189488197 +0800
++++ b/systems/linux/kernel/modules/bcm-knet/bcm-knet.c	2026-05-29 10:12:07.944338660 +0800
+@@ -7245,7 +7245,7 @@
+ static void
+ bkn_timer(struct timer_list *t)
+ {
+-    bkn_switch_info_t *sinfo = from_timer(sinfo, t, timer);
++    bkn_switch_info_t *sinfo = container_of(t, bkn_switch_info_t, timer);
+     return bkn_timer_func(sinfo);
+ }
+ #endif
+@@ -7336,7 +7336,7 @@
+ static void
+ bkn_rxtick(struct timer_list *t)
+ {
+-    bkn_switch_info_t *sinfo = from_timer(sinfo, t, rxtick);
++    bkn_switch_info_t *sinfo = container_of(t, bkn_switch_info_t, rxtick);
+     return bkn_rxtick_func(sinfo);
+ }
+ #endif
+@@ -7521,7 +7521,7 @@
+ 
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+ static int
+-bkn_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
++bkn_get_ts_info(struct net_device *dev, struct kernel_ethtool_ts_info *info)
+ {
+     bkn_priv_t *priv;
+     bkn_switch_info_t *sinfo;
+@@ -10286,8 +10286,8 @@
+     list_for_each(list, &_sinfo_list) {
+         sinfo = (bkn_switch_info_t *)list;
+ 
+-        del_timer_sync(&sinfo->timer);
+-        del_timer_sync(&sinfo->rxtick);
++        timer_delete_sync(&sinfo->timer);
++        timer_delete_sync(&sinfo->rxtick);
+ 
+         cfg_api_lock(sinfo, &flags);
+         if (DEV_IS_CMIC(sinfo)) {
+--- a/systems/linux/kernel/modules/include/lkm.h	2026-05-29 09:54:45.193550074 +0800
++++ b/systems/linux/kernel/modules/include/lkm.h	2026-05-29 10:18:52.646983716 +0800
+@@ -1,3 +1,7 @@
++#ifndef strlcpy
++#define strlcpy(d,s,n) strscpy(d,s,n)
++#endif
++
+ /*
+  * $Id: lkm.h,v 1.22 Broadcom SDK $
+  * $Copyright: 2017-2024 Broadcom Inc. All rights reserved.

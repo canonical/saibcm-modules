@@ -1,0 +1,36 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: opennsl
+Upstream-Contact: Broadcom Inc.
+Source: https://github.com/henrymao-zz/opennsl
+
+Files: *
+Copyright: 2015-2024 Broadcom Inc. and/or its subsidiaries
+License: GPL-2
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ version 2 as published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 2 can be found in `/usr/share/common-licenses/GPL-2'.
+
+Files: debian/*
+Copyright: 2015 Microsoft Corporation
+  2026 Henry Mao
+License: GPL-2
+License: GPL-2
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ version 2 as published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 2 can be found in `/usr/share/common-licenses/GPL-2'.
