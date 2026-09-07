@@ -56,11 +56,12 @@ KNET_BLDDIR := $(OUTPUT_DIR)/knet
 KNETCB_BLDDIR := $(OUTPUT_DIR)/knetcb
 BCMGENL_BLDDIR := $(OUTPUT_DIR)/bcmgenl
 GENL_PACKET_BLDDIR := $(OUTPUT_DIR)/genl-packet
+SWITCHDEV_BLDDIR := $(OUTPUT_DIR)/switchdev
 
 LKM_CFLAGS += -UNGKNET_NETIF_MAX -DNGKNET_NETIF_MAX=1056 -UNGKNET_FILTER_MAX -DNGKNET_FILTER_MAX=1025
 export LKM_CFLAGS
 
-kmod: bde knet knetcb genl-packet bcmgenl
+kmod: bde knet knetcb genl-packet bcmgenl switchdev
 
 bde:
 	$(MAKE) -C $(SDK)/linux/bde SDK=$(SDK) \
@@ -91,6 +92,11 @@ genl-packet:
 		LKM_BLDDIR=$(GENL_PACKET_BLDDIR) $(TARGET)
 	ln -sf $(GENL_PACKET_BLDDIR)/*.ko $(OUTPUT_DIR)
 
+switchdev: genl-packet
+	$(MAKE) -C $(SDK)/linux/switchdev SDK=$(SDK) \
+		LKM_BLDDIR=$(SWITCHDEV_BLDDIR) $(TARGET)
+	ln -sf $(SWITCHDEV_BLDDIR)/*.ko $(OUTPUT_DIR)
+
 clean:
 	$(MAKE) kmod TARGET=$@
 	rm -f $(OUTPUT_DIR)/*.ko
@@ -99,4 +105,4 @@ distclean:
 	$(MAKE) kmod TARGET=$@
 	rm -rf $(OUTPUT_DIR)
 
-.PHONY: help kmod bde knet knetcb genl-packet bcmgenl clean distclean
+.PHONY: help kmod bde knet knetcb genl-packet bcmgenl switchdev clean distclean
