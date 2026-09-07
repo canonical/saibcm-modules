@@ -1,10 +1,10 @@
 /*
- * Generic netlink FIB offload control module.
+ * Generic netlink switchdev FIB offload control module.
  *
- * Registers a generic netlink family "fib_offload" exposing the
- * FIB_OFFLOAD_CMD_SET command which allows userspace to look up a FIB
- * entry by prefix (IPv4 or IPv6) and set its hardware offload flags via
- * fib_alias_hw_flags_set() / fib6_info_hw_flags_set().
+ * Registers a generic netlink family "switchdev" exposing the
+ * SWITCHDEV_CMD_FIB_OFFLOAD_SET command which allows userspace to look
+ * up a FIB entry by prefix (IPv4 or IPv6) and set its hardware offload
+ * flags via fib_alias_hw_flags_set() / fib6_info_hw_flags_set().
  *
  * Copyright 2024 Broadcom. All rights reserved.
  *
@@ -27,26 +27,26 @@
 #include <net/ip6_fib.h>
 #include <net/ip6_route.h>
 #include <net/fib_rules.h>
-#include <uapi/linux/fib-offload.h>
+#include <uapi/linux/switchdev.h>
 
 MODULE_AUTHOR("Broadcom Corporation");
-MODULE_DESCRIPTION("FIB offload generic netlink control");
+MODULE_DESCRIPTION("switchdev FIB offload generic netlink control");
 MODULE_LICENSE("GPL");
 
-static const struct nla_policy fib_offload_policy[FIB_OFFLOAD_ATTR_MAX + 1] = {
-	[FIB_OFFLOAD_ATTR_FAMILY]         = { .type = NLA_U8 },
-	[FIB_OFFLOAD_ATTR_ADDR]          = { .type = NLA_BINARY,
+static const struct nla_policy switchdev_policy[SWITCHDEV_ATTR_MAX + 1] = {
+	[SWITCHDEV_ATTR_FIB_FAMILY]         = { .type = NLA_U8 },
+	[SWITCHDEV_ATTR_FIB_ADDR]          = { .type = NLA_BINARY,
 					    .len  = sizeof(struct in6_addr) },
-	[FIB_OFFLOAD_ATTR_PREFIXLEN]      = { .type = NLA_U8 },
-	[FIB_OFFLOAD_ATTR_TABLE_ID]       = { .type = NLA_U32 },
-	[FIB_OFFLOAD_ATTR_OFFLOAD]        = { .type = NLA_U8 },
-	[FIB_OFFLOAD_ATTR_TRAP]           = { .type = NLA_U8 },
-	[FIB_OFFLOAD_ATTR_OFFLOAD_FAILED] = { .type = NLA_U8 },
+	[SWITCHDEV_ATTR_FIB_PREFIXLEN]      = { .type = NLA_U8 },
+	[SWITCHDEV_ATTR_FIB_TABLE_ID]       = { .type = NLA_U32 },
+	[SWITCHDEV_ATTR_FIB_OFFLOAD]        = { .type = NLA_U8 },
+	[SWITCHDEV_ATTR_FIB_TRAP]           = { .type = NLA_U8 },
+	[SWITCHDEV_ATTR_FIB_OFFLOAD_FAILED] = { .type = NLA_U8 },
 };
 
 static int
-fib_offload_set_v4(struct net *net, const struct in_addr *addr, u8 prefixlen,
-		   u8 offload, u8 trap, u8 offload_failed)
+switchdev_fib_offload_set_v4(struct net *net, const struct in_addr *addr,
+			      u8 prefixlen, u8 offload, u8 trap, u8 offload_failed)
 {
 	struct flowi4 fl4 = { .daddr = addr->s_addr };
 	struct fib_result res = {};
@@ -103,8 +103,8 @@ unlock:
 }
 
 static int
-fib_offload_set_v6(struct net *net, const struct in6_addr *addr, u8 prefixlen,
-		    u8 offload, u8 trap, u8 offload_failed)
+switchdev_fib_offload_set_v6(struct net *net, const struct in6_addr *addr,
+			      u8 prefixlen, u8 offload, u8 trap, u8 offload_failed)
 {
 	struct rt6_info *rt;
 	struct fib6_info *f6i;
@@ -145,7 +145,7 @@ unlock:
 }
 
 static int
-fib_offload_set(struct sk_buff *skb, struct genl_info *info)
+switchdev_fib_offload_set(struct sk_buff *skb, struct genl_info *info)
 {
 	struct net *net = genl_info_net(info);
 	u8 family, prefixlen;
@@ -153,71 +153,73 @@ fib_offload_set(struct sk_buff *skb, struct genl_info *info)
 	int addr_len;
 	u8 offload = 1, trap = 0, offload_failed = 0;
 
-	if (!info->attrs[FIB_OFFLOAD_ATTR_FAMILY] ||
-	    !info->attrs[FIB_OFFLOAD_ATTR_ADDR] ||
-	    !info->attrs[FIB_OFFLOAD_ATTR_PREFIXLEN])
+	if (!info->attrs[SWITCHDEV_ATTR_FIB_FAMILY] ||
+	    !info->attrs[SWITCHDEV_ATTR_FIB_ADDR] ||
+	    !info->attrs[SWITCHDEV_ATTR_FIB_PREFIXLEN])
 		return -EINVAL;
 
-	family = nla_get_u8(info->attrs[FIB_OFFLOAD_ATTR_FAMILY]);
-	prefixlen = nla_get_u8(info->attrs[FIB_OFFLOAD_ATTR_PREFIXLEN]);
-	addr = nla_data(info->attrs[FIB_OFFLOAD_ATTR_ADDR]);
-	addr_len = nla_len(info->attrs[FIB_OFFLOAD_ATTR_ADDR]);
+	family = nla_get_u8(info->attrs[SWITCHDEV_ATTR_FIB_FAMILY]);
+	prefixlen = nla_get_u8(info->attrs[SWITCHDEV_ATTR_FIB_PREFIXLEN]);
+	addr = nla_data(info->attrs[SWITCHDEV_ATTR_FIB_ADDR]);
+	addr_len = nla_len(info->attrs[SWITCHDEV_ATTR_FIB_ADDR]);
 
-	if (info->attrs[FIB_OFFLOAD_ATTR_OFFLOAD])
-		offload = nla_get_u8(info->attrs[FIB_OFFLOAD_ATTR_OFFLOAD]);
-	if (info->attrs[FIB_OFFLOAD_ATTR_TRAP])
-		trap = nla_get_u8(info->attrs[FIB_OFFLOAD_ATTR_TRAP]);
-	if (info->attrs[FIB_OFFLOAD_ATTR_OFFLOAD_FAILED])
+	if (info->attrs[SWITCHDEV_ATTR_FIB_OFFLOAD])
+		offload = nla_get_u8(info->attrs[SWITCHDEV_ATTR_FIB_OFFLOAD]);
+	if (info->attrs[SWITCHDEV_ATTR_FIB_TRAP])
+		trap = nla_get_u8(info->attrs[SWITCHDEV_ATTR_FIB_TRAP]);
+	if (info->attrs[SWITCHDEV_ATTR_FIB_OFFLOAD_FAILED])
 		offload_failed = nla_get_u8(
-			info->attrs[FIB_OFFLOAD_ATTR_OFFLOAD_FAILED]);
+			info->attrs[SWITCHDEV_ATTR_FIB_OFFLOAD_FAILED]);
 
 	switch (family) {
 	case AF_INET:
 		if (addr_len != sizeof(struct in_addr))
 			return -EINVAL;
-		return fib_offload_set_v4(net, addr, prefixlen,
-					  offload, trap, offload_failed);
+		return switchdev_fib_offload_set_v4(net, addr, prefixlen,
+						    offload, trap,
+						    offload_failed);
 	case AF_INET6:
 		if (addr_len != sizeof(struct in6_addr))
 			return -EINVAL;
-		return fib_offload_set_v6(net, addr, prefixlen,
-					  offload, trap, offload_failed);
+		return switchdev_fib_offload_set_v6(net, addr, prefixlen,
+						    offload, trap,
+						    offload_failed);
 	default:
 		return -EAFNOSUPPORT;
 	}
 }
 
-static const struct genl_small_ops fib_offload_ops[] = {
+static const struct genl_small_ops switchdev_ops[] = {
 	{
-		.cmd      = FIB_OFFLOAD_CMD_SET,
+		.cmd      = SWITCHDEV_CMD_FIB_OFFLOAD_SET,
 		.validate = GENL_DONT_VALIDATE_STRICT |
 			    GENL_DONT_VALIDATE_DUMP,
-		.doit     = fib_offload_set,
+		.doit     = switchdev_fib_offload_set,
 	},
 };
 
-static struct genl_family fib_offload_family = {
-	.name       = FIB_OFFLOAD_GENL_NAME,
-	.version    = FIB_OFFLOAD_GENL_VERSION,
-	.maxattr    = FIB_OFFLOAD_ATTR_MAX,
-	.netnsok    = true,
-	.module     = THIS_MODULE,
-	.policy     = fib_offload_policy,
-	.small_ops  = fib_offload_ops,
-	.n_small_ops = ARRAY_SIZE(fib_offload_ops),
+static struct genl_family switchdev_family = {
+	.name        = SWITCHDEV_GENL_NAME,
+	.version     = SWITCHDEV_GENL_VERSION,
+	.maxattr     = SWITCHDEV_ATTR_MAX,
+	.netnsok     = true,
+	.module      = THIS_MODULE,
+	.policy       = switchdev_policy,
+	.small_ops   = switchdev_ops,
+	.n_small_ops = ARRAY_SIZE(switchdev_ops),
 };
 
 static int __init
-fib_offload_init(void)
+switchdev_init(void)
 {
-	return genl_register_family(&fib_offload_family);
+	return genl_register_family(&switchdev_family);
 }
 
 static void __exit
-fib_offload_exit(void)
+switchdev_exit(void)
 {
-	genl_unregister_family(&fib_offload_family);
+	genl_unregister_family(&switchdev_family);
 }
 
-module_init(fib_offload_init);
-module_exit(fib_offload_exit);
+module_init(switchdev_init);
+module_exit(switchdev_exit);

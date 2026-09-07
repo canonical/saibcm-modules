@@ -1,6 +1,6 @@
 # -*- Kbuild -*-
 #
-# Generic netlink FIB offload control module.
+# Generic netlink switchdev FIB offload control module.
 #
 # Copyright 2024 Broadcom. All rights reserved.
 #
@@ -9,7 +9,7 @@
 # version 2 as published by the Free Software Foundation.
 #
 
-obj-m := fib-offload.o
+obj-m := switchdev.o
 
 ccflags-y := $(LKM_CFLAGS) \
 	     -I$(SDK)/linux/include/lkm \
